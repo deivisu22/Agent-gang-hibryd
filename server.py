@@ -32,7 +32,7 @@ def obtener_key_actual() -> str:
     global KEY_INDEX
     keys = obtener_keys()
     if not keys:
-        raise HTTPException(status_code=500, detail="Falta GEMINI_API_KEYS en Vercel.")
+        raise HTTPException(status_code=500, detail="Falta GEMINI_API_KEYS en las variables de entorno.")
     return keys[KEY_INDEX % len(keys)]
 
 def rotar_api_key():
@@ -41,6 +41,7 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
+# --- PERSISTENCIA (REDIS / LOCAL) ---
 UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL", "").rstrip("/")
 UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
 ARCHIVO_MEMORIA = "/tmp/aria_chats.json"
@@ -51,7 +52,7 @@ def guardar_en_redis(key: str, val: dict) -> bool:
     try:
         url = f"{UPSTASH_URL}/set/{key}"
         headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-        res = requests.post(url, json=json.dumps(val), headers=headers, timeout=5)
+        res = requests.post(url, data=json.dumps(val), headers=headers, timeout=5)
         return res.status_code == 200
     except Exception:
         return False
@@ -95,13 +96,13 @@ def obtener_historial_chat(chat_id: str) -> list:
     sesiones = cargar_todas_sesiones()
     return sesiones.get(chat_id, {}).get("mensajes", [])
 
-def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str = "Nueva conversación"):
+def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str = ""):
     sesiones = cargar_todas_sesiones()
     timestamp_actual = time.strftime("%Y-%m-%d %H:%M:%S")
     
     if chat_id not in sesiones:
         sesiones[chat_id] = {
-            "titulo": titulo if titulo else "Conversación " + time.strftime("%H:%M"),
+            "titulo": titulo if titulo else f"Conversación {time.strftime('%H:%M')}",
             "creado": timestamp_actual,
             "mensajes": []
         }
@@ -116,6 +117,7 @@ def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str 
     sesiones[chat_id]["mensajes"] = sesiones[chat_id]["mensajes"][-40:]
     guardar_todas_sesiones(sesiones)
 
+# --- HERRAMIENTAS DE BÚSQUEDA ---
 def realizar_busqueda_google(query: str) -> list[str]:
     results = []
     google_api_key = os.getenv("GOOGLE_SEARCH_API_KEY", "")
@@ -125,12 +127,8 @@ def realizar_busqueda_google(query: str) -> list[str]:
             url = f"https://www.googleapis.com/customsearch/v1?q={requests.utils.quote(query)}&key={google_api_key}&cx={google_cx}&num=3"
             res = requests.get(url, timeout=5)
             if res.status_code == 200:
-                items = res.json().get("items", [])
-                for item in items:
-                    title = item.get("title", "")
-                    snippet = item.get("snippet", "")
-                    link = item.get("link", "")
-                    results.append(f"[Google] {title}: {snippet} ({link})")
+                for item in res.json().get("items", []):
+                    results.append(f"[Google] {item.get('title')}: {item.get('snippet')} ({item.get('link')})")
         except Exception:
             pass
     return results
@@ -144,41 +142,30 @@ def realizar_busqueda_duckduckgo(query: str) -> list[str]:
         if res.status_code == 200 and "result__snippet" in res.text:
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(res.text, "html.parser")
-            snippets = [s.get_text() for s in soup.find_all("a", class_="result__snippet")[:3]]
-            for s in snippets:
-                results.append(f"[DuckDuckGo] {s.strip()}")
+            for s in soup.find_all("a", class_="result__snippet")[:3]:
+                results.append(f"[DuckDuckGo] {s.get_text().strip()}")
     except Exception:
         pass
     return results
 
 def realizar_busqueda_web_hibrida(query: str) -> str:
-    hallazgos = []
-    google_res = realizar_busqueda_google(query)
-    if google_res:
-        hallazgos.extend(google_res)
-    ddg_res = realizar_busqueda_duckduckgo(query)
-    if ddg_res:
-        hallazgos.extend(ddg_res)
-    if hallazgos:
-        return "\n".join(hallazgos[:5])
-    return "No se obtuvieron resultados en tiempo real."
+    hallazgos = realizar_busqueda_google(query) + realizar_busqueda_duckduckgo(query)
+    return "\n".join(hallazgos[:5]) if hallazgos else "Sin resultados adicionales en web."
 
+# --- SYSTEM PROMPTS ---
 ROLES_PROMPTS = {
     "dev": (
-        "Eres Aria AI en modo FULL STACK DEVELOPER.\n"
-        "Especialista en Python, JavaScript, FastAPI, SQL y arquitecturas Serverless.\n"
-        "Proporciona código limpio, optimizado y libre de bugs."
+        "Eres Aria AI en modo FULL STACK DEVELOPER y Arquitecta de Software.\n"
+        "Especialista en Python, JavaScript, FastAPI, APIs de Google Gemini y arquitecturas serverless.\n"
+        "Cuando analices o generes código, proporciona soluciones directas, modulares, eficientes y listas para producción."
     ),
     "accounting": (
         "Eres Aria AI en modo ANALISTA CONTABLE Y FISCAL EXPERTO EN VENEZUELA.\n"
-        "Tienes dominio completo de normativas SENIAT, IGTF, IVA, ISLR y los siguientes sistemas contables:\n"
-        "- SAP\n- PROFIT PLUS\n- ABC-SOFT\n- INFO AUTO\n- ODOO\n"
-        "Proporciona análisis estructurados, tablas comparativas y asientos contables precisos."
+        "Dominio de normativas SENIAT, IGTF, IVA, ISLR y ERPs (SAP, Profit Plus, ABC-Soft, Info Auto, Odoo)."
     ),
     "english": (
         "You are Aria AI in ENGLISH TUTOR Mode.\n"
-        "Help the user learn English dynamically. Correct grammar, expand vocabulary, "
-        "and provide responses in English with concise Spanish explanations when needed."
+        "Help the user learn English dynamically with concise grammar explanations and natural conversation."
     )
 }
 
@@ -200,64 +187,86 @@ def chat_endpoint(peticion: PeticionChat):
     if not keys:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEYS no configurada.")
 
-    historial = obtener_historial_chat(peticion.chat_id)
-    conversacion_previa = ""
-    for msg in historial[-6:]:
-        conversacion_previa += f"\n[{msg['rol'].upper()} - {msg.get('timestamp', '')}]: {msg['contenido']}\n"
-
     role_instruction = ROLES_PROMPTS.get(peticion.modo_rol, ROLES_PROMPTS["dev"])
-    
-    web_context = ""
     if peticion.web_search:
-        resultados_web = realizar_busqueda_web_hibrida(peticion.prompt)
-        web_context = f"\n\nINFORMACIÓN EN TIEMPO REAL (BÚSQUEDA HÍBRIDA GOOGLE + WEB):\n{resultados_web}\n"
+        contexto_web = realizar_busqueda_web_hibrida(peticion.prompt)
+        role_instruction += f"\n\nINFORMACIÓN EN TIEMPO REAL:\n{contexto_web}"
 
-    system_instruction = f"{role_instruction}\n{web_context}\nHISTORIAL DE CHAT:\n{conversacion_previa}"
+    historial = obtener_historial_chat(peticion.chat_id)
+    contents = []
+    
+    for msg in historial[-8:]:
+        role_gemini = "user" if msg.get("rol") == "usuario" else "model"
+        contents.append({
+            "role": role_gemini,
+            "parts": [{"text": msg.get("contenido", "")}]
+        })
 
-    parts = []
+    current_parts = []
     if peticion.archivos:
         for arch in peticion.archivos:
-            if "text" in arch.mime_type or "json" in arch.mime_type or any(arch.nombre.endswith(ext) for ext in [".py", ".csv", ".sql", ".js", ".html", ".css", ".txt"]):
+            es_texto = "text" in arch.mime_type or "json" in arch.mime_type or any(
+                arch.nombre.endswith(ext) for ext in [".py", ".csv", ".sql", ".js", ".html", ".css", ".txt", ".json"]
+            )
+            if es_texto:
                 try:
-                    decoded_text = base64.b64decode(arch.contenido_b64.split(",")[-1]).decode("utf-8", errors="ignore")
-                    # Truncar código extremadamente largo para evitar Read Timeout
-                    if len(decoded_text) > 20000:
-                        decoded_text = decoded_text[:20000] + "\n... [CÓDIGO TRUNCADO POR TAMAÑO]"
-                    parts.append({"text": f"--- ARCHIVO/CÓDIGO ADJUNTO: {arch.nombre} ---\n{decoded_text}\n--- FIN ARCHIVO ---"})
+                    decoded = base64.b64decode(arch.contenido_b64.split(",")[-1]).decode("utf-8", errors="ignore")
+                    if len(decoded) > 25000:
+                        decoded = decoded[:25000] + "\n... [TRUNCADO POR TAMAÑO]"
+                    current_parts.append({"text": f"--- ARCHIVO: {arch.nombre} ---\n{decoded}\n--- FIN ARCHIVO ---"})
                 except Exception:
                     pass
             else:
                 encoded = arch.contenido_b64.split(",")[-1]
-                parts.append({"inline_data": {"mime_type": arch.mime_type, "data": encoded}})
+                current_parts.append({"inline_data": {"mime_type": arch.mime_type, "data": encoded}})
 
-    prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {peticion.prompt if peticion.prompt else 'Analiza los archivos adjuntos.'}"
-    parts.append({"text": prompt_final})
+    current_parts.append({"text": peticion.prompt if peticion.prompt else "Analiza los archivos adjuntos."})
+    contents.append({"role": "user", "parts": current_parts})
 
-    payload = {"contents": [{"parts": parts}]}
-    # MODELOS ACTUALIZADOS SEGÚN LA API DE GOOGLE
-    modelos = ["gemini-3.6-flash", "gemini-1.5-flash", "gemini-flash-latest"]
+    payload = {
+        "system_instruction": {"parts": [{"text": role_instruction}]},
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.3,
+            "maxOutputTokens": 4096
+        }
+    }
+
+    modelos = ["gemini-2.5-flash", "gemini-1.5-flash"]
     errores = []
 
-    for k_idx in range(len(keys)):
+    for _ in range(len(keys)):
         api_key = obtener_key_actual()
         for mod in modelos:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={api_key}"
             try:
-                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=20)
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
                 data = res.json()
+
                 if res.status_code == 200 and "candidates" in data:
-                    texto_resp = data["candidates"][0]["content"]["parts"][0]["text"]
-                    guardar_mensaje_en_chat(peticion.chat_id, "usuario", peticion.prompt)
-                    guardar_mensaje_en_chat(peticion.chat_id, "agente", texto_resp)
-                    return {"respuesta": texto_resp}
+                    candidate = data["candidates"][0]
+                    parts = candidate.get("content", {}).get("parts", [])
+                    if parts and "text" in parts[0]:
+                        texto_resp = parts[0]["text"]
+                        guardar_mensaje_en_chat(peticion.chat_id, "usuario", peticion.prompt)
+                        guardar_mensaje_en_chat(peticion.chat_id, "agente", texto_resp)
+                        return {"respuesta": texto_resp}
+                    else:
+                        errores.append(f"{mod}: Respuesta vacía o bloqueada (finishReason: {candidate.get('finishReason')})")
+                elif res.status_code in (429, 403):
+                    rotar_api_key()
+                    errores.append(f"{mod} -> {res.status_code} (Key rotada)")
+                    break
                 else:
-                    errores.append(f"Mod {mod} -> {res.status_code}: {data.get('error', {}).get('message', res.text[:100])}")
+                    errores.append(f"{mod} -> {res.status_code}: {data.get('error', {}).get('message', res.text[:80])}")
             except Exception as e:
-                errores.append(f"Mod {mod} -> Ex: {str(e)}")
-            rotar_api_key()
+                errores.append(f"{mod} -> Ex: {str(e)}")
+
+        rotar_api_key()
 
     raise HTTPException(status_code=500, detail=f"FALLO ARIA SUITE: {' || '.join(errores)}")
 
+# --- ENDPOINTS CRUD CHATS ---
 @app.get("/api/chats")
 def listar_chats():
     sesiones = cargar_todas_sesiones()
