@@ -117,7 +117,7 @@ def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str 
     sesiones[chat_id]["mensajes"] = sesiones[chat_id]["mensajes"][-40:]
     guardar_todas_sesiones(sesiones)
 
-# --- HERRAMIENTAS DE BÚSQUEDA ---
+# --- BÚSQUEDA WEB ---
 def realizar_busqueda_google(query: str) -> list[str]:
     results = []
     google_api_key = os.getenv("GOOGLE_SEARCH_API_KEY", "")
@@ -157,7 +157,7 @@ ROLES_PROMPTS = {
     "dev": (
         "Eres Aria AI en modo FULL STACK DEVELOPER y Arquitecta de Software.\n"
         "Especialista en Python, JavaScript, FastAPI, APIs de Google Gemini y arquitecturas serverless.\n"
-        "Cuando analices o generes código, proporciona soluciones directas, modulares, eficientes y listas para producción."
+        "Proporciona soluciones directas, modulares, eficientes y listas para producción."
     ),
     "accounting": (
         "Eres Aria AI en modo ANALISTA CONTABLE Y FISCAL EXPERTO EN VENEZUELA.\n"
@@ -188,19 +188,17 @@ def chat_endpoint(peticion: PeticionChat):
         raise HTTPException(status_code=500, detail="GEMINI_API_KEYS no configurada.")
 
     role_instruction = ROLES_PROMPTS.get(peticion.modo_rol, ROLES_PROMPTS["dev"])
-    if peticion.web_search:
+    if peticion.web_search and peticion.prompt:
         contexto_web = realizar_busqueda_web_hibrida(peticion.prompt)
         role_instruction += f"\n\nINFORMACIÓN EN TIEMPO REAL:\n{contexto_web}"
 
+    # Construir historial previo
     historial = obtener_historial_chat(peticion.chat_id)
-    contents = []
-    
-    for msg in historial[-8:]:
-        role_gemini = "user" if msg.get("rol") == "usuario" else "model"
-        contents.append({
-            "role": role_gemini,
-            "parts": [{"text": msg.get("contenido", "")}]
-        })
+    conversacion_previa = ""
+    for msg in historial[-6:]:
+        conversacion_previa += f"\n[{msg.get('rol', 'usuario').upper()}]: {msg.get('contenido', '')}\n"
+
+    system_instruction_completa = f"{role_instruction}\n\nHISTORIAL DE CHAT:\n{conversacion_previa}"
 
     current_parts = []
     if peticion.archivos:
@@ -211,8 +209,8 @@ def chat_endpoint(peticion: PeticionChat):
             if es_texto:
                 try:
                     decoded = base64.b64decode(arch.contenido_b64.split(",")[-1]).decode("utf-8", errors="ignore")
-                    if len(decoded) > 25000:
-                        decoded = decoded[:25000] + "\n... [TRUNCADO POR TAMAÑO]"
+                    if len(decoded) > 20000:
+                        decoded = decoded[:20000] + "\n... [TRUNCADO POR TAMAÑO]"
                     current_parts.append({"text": f"--- ARCHIVO: {arch.nombre} ---\n{decoded}\n--- FIN ARCHIVO ---"})
                 except Exception:
                     pass
@@ -220,19 +218,15 @@ def chat_endpoint(peticion: PeticionChat):
                 encoded = arch.contenido_b64.split(",")[-1]
                 current_parts.append({"inline_data": {"mime_type": arch.mime_type, "data": encoded}})
 
-    current_parts.append({"text": peticion.prompt if peticion.prompt else "Analiza los archivos adjuntos."})
-    contents.append({"role": "user", "parts": current_parts})
+    prompt_texto = peticion.prompt if peticion.prompt.strip() else "Analiza los archivos adjuntos."
+    current_parts.append({"text": f"{system_instruction_completa}\n\nPETICIÓN ACTUAL: {prompt_texto}"})
 
     payload = {
-        "system_instruction": {"parts": [{"text": role_instruction}]},
-        "contents": contents,
-        "generationConfig": {
-            "temperature": 0.3,
-            "maxOutputTokens": 4096
-        }
+        "contents": [{"parts": current_parts}]
     }
 
-    modelos = ["gemini-2.5-flash", "gemini-1.5-flash"]
+    # MODELOS CONFIRMADOS ACTIVOS EN TU API KEY
+    modelos = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"]
     errores = []
 
     for _ in range(len(keys)):
@@ -240,25 +234,17 @@ def chat_endpoint(peticion: PeticionChat):
         for mod in modelos:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={api_key}"
             try:
-                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=20)
                 data = res.json()
 
                 if res.status_code == 200 and "candidates" in data:
-                    candidate = data["candidates"][0]
-                    parts = candidate.get("content", {}).get("parts", [])
-                    if parts and "text" in parts[0]:
-                        texto_resp = parts[0]["text"]
-                        guardar_mensaje_en_chat(peticion.chat_id, "usuario", peticion.prompt)
-                        guardar_mensaje_en_chat(peticion.chat_id, "agente", texto_resp)
-                        return {"respuesta": texto_resp}
-                    else:
-                        errores.append(f"{mod}: Respuesta vacía o bloqueada (finishReason: {candidate.get('finishReason')})")
-                elif res.status_code in (429, 403):
-                    rotar_api_key()
-                    errores.append(f"{mod} -> {res.status_code} (Key rotada)")
-                    break
+                    texto_resp = data["candidates"][0]["content"]["parts"][0]["text"]
+                    guardar_mensaje_en_chat(peticion.chat_id, "usuario", prompt_texto)
+                    guardar_mensaje_en_chat(peticion.chat_id, "agente", texto_resp)
+                    return {"respuesta": texto_resp}
                 else:
-                    errores.append(f"{mod} -> {res.status_code}: {data.get('error', {}).get('message', res.text[:80])}")
+                    err_msg = data.get("error", {}).get("message", res.text[:100])
+                    errores.append(f"{mod} -> {res.status_code}: {err_msg}")
             except Exception as e:
                 errores.append(f"{mod} -> Ex: {str(e)}")
 
@@ -266,7 +252,6 @@ def chat_endpoint(peticion: PeticionChat):
 
     raise HTTPException(status_code=500, detail=f"FALLO ARIA SUITE: {' || '.join(errores)}")
 
-# --- ENDPOINTS CRUD CHATS ---
 @app.get("/api/chats")
 def listar_chats():
     sesiones = cargar_todas_sesiones()
