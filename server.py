@@ -2,13 +2,11 @@ import os
 import sys
 import json
 import time
-import subprocess
-import shutil
 import base64
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
@@ -17,28 +15,35 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-KEYS_RAW = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
-API_KEYS = [k.strip() for k in KEYS_RAW.split(",") if k.strip()]
+def obtener_keys():
+    KEYS_RAW = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
+    return [k.strip() for k in KEYS_RAW.split(",") if k.strip()]
 
 KEY_INDEX = 0
 
 def obtener_cliente_genai():
     global KEY_INDEX
-    if not API_KEYS:
-        raise HTTPException(status_code=500, detail="Falta GEMINI_API_KEYS en las variables de Vercel.")
-    key_actual = API_KEYS[KEY_INDEX % len(API_KEYS)]
+    keys = obtener_keys()
+    if not keys:
+        raise HTTPException(
+            status_code=503, 
+            detail="Falta la variable GEMINI_API_KEYS en las Environment Variables de Vercel."
+        )
+    key_actual = keys[KEY_INDEX % len(keys)]
     return genai.Client(api_key=key_actual)
 
 def rotar_api_key():
     global KEY_INDEX
-    if API_KEYS:
-        KEY_INDEX = (KEY_INDEX + 1) % len(API_KEYS)
+    keys = obtener_keys()
+    if keys:
+        KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-MODELO_PRINCIPAL = "gemini-3.6-flash"
-MODELO_RESPALDO = "gemini-3.5-flash"
+# Modelos oficiales estándar
+MODELO_PRINCIPAL = "gemini-2.5-flash"
+MODELO_RESPALDO = "gemini-1.5-flash"
 ARCHIVO_MEMORIA = "/tmp/memoria.json"
 
-app = FastAPI(title="Aria Mirror AI Studio Vercel Edition")
+app = FastAPI(title="Aria Mirror AI Studio")
 
 app.add_middleware(
     CORSMiddleware,
@@ -90,6 +95,10 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
     if any(p in prompt.lower() for p in palabras_graficas) and not imagen_b64:
         return generar_imagen_arte(prompt)
 
+    keys = obtener_keys()
+    if not keys:
+        raise HTTPException(status_code=503, detail="Variable GEMINI_API_KEYS no configurada en Vercel.")
+
     memoria = cargar_memoria()
     conversacion_previa = ""
     for msg in memoria.get("historial_conversacion", [])[-8:]:
@@ -97,9 +106,7 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
 
     system_instruction = (
         "Eres Aria AI, un Agente Autónomo Multi-Funcional y Tutor Personal en Vercel Cloud.\n"
-        "1. Responde con texto directo, natural y fluido.\n"
-        "2. Si la petición es de código, entrega código modular, listo para producción y probado.\n"
-        "3. NUNCA agregues resúmenes o conclusiones innecesarias al final.\n\n"
+        "Responde de forma directa, concisa y útil.\n"
         f"HISTORIAL RECIENTE:\n{conversacion_previa}"
     )
 
@@ -113,8 +120,8 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
     prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {prompt if prompt else 'Analiza la imagen.'}"
     contents.append(prompt_final)
 
-    intentos_totales = max(len(API_KEYS) * 2, 2)
-    for _ in range(intentos_totales):
+    ultimo_error = ""
+    for _ in range(len(keys) * 2):
         client = obtener_cliente_genai()
         for modelo in [MODELO_PRINCIPAL, MODELO_RESPALDO]:
             try:
@@ -122,14 +129,12 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
                 guardar_mensaje_historial("usuario", prompt)
                 guardar_mensaje_historial("agente", response.text)
                 return response.text
-            except (ServerError, ClientError):
-                rotar_api_key()
-                time.sleep(0.5)
             except Exception as e:
+                ultimo_error = str(e)
                 rotar_api_key()
-                time.sleep(0.5)
+                time.sleep(0.3)
 
-    raise HTTPException(status_code=503, detail="API Keys temporalmente saturadas.")
+    raise HTTPException(status_code=503, detail=f"Error en llamadas a Gemini: {ultimo_error}")
 
 class PeticionChat(BaseModel):
     prompt: str
