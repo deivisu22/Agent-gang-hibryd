@@ -114,8 +114,29 @@ def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str 
     sesiones[chat_id]["mensajes"] = sesiones[chat_id]["mensajes"][-30:]
     guardar_todas_sesiones(sesiones)
 
-# BÚSQUEDA WEB TOOL
-def realizar_busqueda_web(query: str) -> str:
+# MOTOR DE BÚSQUEDA HÍBRIDO: GOOGLE + DUCKDUCKGO
+def realizar_busqueda_google(query: str) -> list[str]:
+    results = []
+    google_api_key = os.getenv("GOOGLE_SEARCH_API_KEY", "")
+    google_cx = os.getenv("GOOGLE_SEARCH_CX", "")
+    
+    if google_api_key and google_cx:
+        try:
+            url = f"https://www.googleapis.com/customsearch/v1?q={requests.utils.quote(query)}&key={google_api_key}&cx={google_cx}&num=3"
+            res = requests.get(url, timeout=5)
+            if res.status_code == 200:
+                items = res.json().get("items", [])
+                for item in items:
+                    title = item.get("title", "")
+                    snippet = item.get("snippet", "")
+                    link = item.get("link", "")
+                    results.append(f"[Google] {title}: {snippet} ({link})")
+        except Exception:
+            pass
+    return results
+
+def realizar_busqueda_duckduckgo(query: str) -> list[str]:
+    results = []
     try:
         url = f"https://html.duckduckgo.com/html/?q={requests.utils.quote(query)}"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -124,10 +145,28 @@ def realizar_busqueda_web(query: str) -> str:
             from bs4 import BeautifulSoup
             soup = BeautifulSoup(res.text, "html.parser")
             snippets = [s.get_text() for s in soup.find_all("a", class_="result__snippet")[:3]]
-            return "\n".join(snippets)
+            for s in snippets:
+                results.append(f"[DuckDuckGo] {s.strip()}")
     except Exception:
         pass
-    return "No se obtuvieron resultados adicionales de búsqueda web."
+    return results
+
+def realizar_busqueda_web_hibrida(query: str) -> str:
+    hallazgos = []
+    
+    # 1. Intentar Búsqueda vía Google API / Custom Search
+    google_res = realizar_busqueda_google(query)
+    if google_res:
+        hallazgos.extend(google_res)
+        
+    # 2. Complementar o respaldar con DuckDuckGo
+    ddg_res = realizar_busqueda_duckduckgo(query)
+    if ddg_res:
+        hallazgos.extend(ddg_res)
+        
+    if hallazgos:
+        return "\n".join(hallazgos[:5])
+    return "No se obtuvieron resultados en tiempo real de Google ni DuckDuckGo."
 
 ROLES_PROMPTS = {
     "dev": (
@@ -175,8 +214,8 @@ def chat_endpoint(peticion: PeticionChat):
     
     web_context = ""
     if peticion.web_search:
-        resultados_web = realizar_busqueda_web(peticion.prompt)
-        web_context = f"\n\nINFORMACIÓN EN TIEMPO REAL BÚSQUEDA WEB:\n{resultados_web}\n"
+        resultados_web = realizar_busqueda_web_hibrida(peticion.prompt)
+        web_context = f"\n\nINFORMACIÓN EN TIEMPO REAL (BÚSQUEDA HÍBRIDA GOOGLE + WEB):\n{resultados_web}\n"
 
     system_instruction = f"{role_instruction}\n{web_context}\nHISTORIAL DE CHAT:\n{conversacion_previa}"
 
