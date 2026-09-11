@@ -2,7 +2,6 @@ import os
 import json
 import time
 import base64
-import traceback
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,7 +34,7 @@ def configurar_gemini() -> str:
     if not keys:
         raise HTTPException(
             status_code=500, 
-            detail="DIAGNOSTICO: La variable GEMINI_API_KEYS esta VACIA en Vercel."
+            detail="Falta la variable GEMINI_API_KEYS en las Environment Variables de Vercel."
         )
     key_actual = keys[KEY_INDEX % len(keys)]
     genai.configure(api_key=key_actual)
@@ -47,7 +46,8 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-MODELOS = ["gemini-1.5-flash", "gemini-1.5-pro"]
+# Alias universales compatibles con la API v1beta / v1
+MODELOS = ["gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-pro"]
 ARCHIVO_MEMORIA = "/tmp/memoria.json"
 
 def cargar_memoria() -> dict:
@@ -78,12 +78,25 @@ def guardar_mensaje_historial(rol: str, contenido: str):
     memoria["historial_conversacion"] = memoria["historial_conversacion"][-40:]
     guardar_memoria(memoria)
 
+def generar_imagen_arte(prompt: str) -> str:
+    prompt_encoded = prompt.replace(" ", "%20")
+    url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
+    return (
+        f"🎨 **Resultado Visual:**\n\n"
+        f"![Imagen Generada]({url_imagen})\n\n"
+        f"🔗 [Descargar Imagen HD]({url_imagen})"
+    )
+
 def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
+    palabras_graficas = ["crea una imagen", "genera una imagen", "haz un dibujo", "dibuja", "renderiza", "diseña un logo"]
+    if any(p in prompt.lower() for p in palabras_graficas) and not imagen_b64:
+        return generar_imagen_arte(prompt)
+
     keys = obtener_keys()
     if not keys:
         raise HTTPException(
             status_code=500, 
-            detail="DIAGNOSTICO: GEMINI_API_KEYS no existe en os.environ de Vercel."
+            detail="Error: GEMINI_API_KEYS no existe en las variables de entorno de Vercel."
         )
 
     memoria = cargar_memoria()
@@ -92,8 +105,8 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         conversacion_previa += f"\n[{msg['rol'].upper()}]: {msg['contenido']}\n"
 
     system_instruction = (
-        "Eres Aria AI, mi asistente personal, desarrollador full stack y tutor personal.\n"
-        "Responde de forma técnica, dinámica, sin rodeos.\n"
+        "Eres Aria AI, asistente personal, desarrollador full stack y tutor personal.\n"
+        "Responde de forma técnica, dinámica y directa.\n"
         f"HISTORIAL RECIENTE:\n{conversacion_previa}"
     )
 
@@ -120,7 +133,7 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
                     guardar_mensaje_historial("agente", response.text)
                     return response.text
             except Exception as e:
-                err_msg = f"KeyIdx {k_idx} | Modelo {mod} -> Error: {str(e)}"
+                err_msg = f"KeyIdx {k_idx} | Modelo {mod} -> {str(e)}"
                 errores_acumulados.append(err_msg)
                 rotar_api_key()
 
