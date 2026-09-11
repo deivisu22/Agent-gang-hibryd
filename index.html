@@ -2,187 +2,295 @@
 <html lang="es" class="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Aria AI Studio</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aria Studio AI - Multi-Agent Suite</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-        body { background-color: #0d0f17; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; }
-        .glass-panel { background: rgba(22, 27, 46, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
-        .chat-container { height: calc(100vh - 120px); }
-        .markdown-body pre { background: #1a1d2e; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 0.5rem 0; }
-        .markdown-body code { font-family: monospace; background: rgba(255, 255, 255, 0.1); padding: 0.2rem 0.4rem; border-radius: 0.25rem; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        pre code { border-radius: 0.5rem; font-family: 'Fira Code', monospace; }
     </style>
 </head>
-<body class="h-screen overflow-hidden flex flex-col">
+<body class="bg-slate-950 text-slate-100 font-sans h-screen flex overflow-hidden">
 
-    <!-- Navbar -->
-    <header class="h-14 glass-panel border-b border-slate-800 flex items-center justify-between px-4 z-20">
-        <div class="flex items-center space-x-3">
-            <button id="btn-menu" class="text-slate-400 hover:text-white md:hidden">
-                <i class="fa-solid fa-bars text-lg"></i>
-            </button>
-            <span class="font-bold text-lg bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent">✦ Aria Studio</span>
-        </div>
-        <div class="text-xs text-slate-500 font-mono hidden sm:block">
-            CPU: Vercel Serverless | RAM: Auto-scaled
-        </div>
-    </header>
-
-    <div class="flex flex-1 overflow-hidden relative">
-        <!-- Sidebar -->
-        <aside id="sidebar" class="w-64 glass-panel border-r border-slate-800 flex flex-col justify-between absolute md:relative z-30 h-full transform -translate-x-full md:translate-x-0 transition-transform duration-300">
-            <div class="p-4 space-y-4">
-                <button onclick="reiniciarChat()" class="w-full py-2 px-4 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded-xl text-purple-300 text-sm font-semibold transition flex items-center justify-center space-x-2">
-                    <i class="fa-solid fa-plus text-xs"></i>
-                    <span>Nueva conversación</span>
-                </button>
-                <div class="space-y-1">
-                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2">Archivos Workspace</p>
-                    <div id="file-tree" class="text-xs text-slate-400 space-y-1 pl-2">
-                        <!-- Carga dinamica de archivos -->
-                    </div>
+    <!-- SIDEBAR: MULTI-CHAT & NAVEGACIÓN -->
+    <aside class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col justify-between p-4 z-20">
+        <div>
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center font-bold">A</div>
+                    <span class="font-bold text-lg tracking-wide bg-gradient-to-r from-purple-400 to-indigo-300 bg-clip-text text-transparent">Aria Studio</span>
                 </div>
-            </div>
-            <div class="p-4 border-t border-slate-800 text-xs text-slate-500">
-                <p class="font-semibold text-slate-300">Deivis Urdaneta</p>
-                <p class="text-emerald-400 font-mono">Aria AI v6.0 Active</p>
-            </div>
-        </aside>
-
-        <!-- Main Chat Area -->
-        <main class="flex-1 flex flex-col relative w-full h-full bg-slate-950/50">
-            <div id="chat-box" class="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
-                <!-- Los mensajes se insertan aqui -->
+                <button onclick="nuevoChat()" class="p-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-white transition text-sm">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
             </div>
 
-            <!-- Sticky Input Bar -->
-            <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#0d0f17] via-[#0d0f17]/90 to-transparent z-10">
-                <div class="max-w-4xl mx-auto glass-panel rounded-2xl p-2 flex items-center space-x-2 shadow-2xl border border-slate-700/50">
-                    <label for="img-input" class="p-2 text-slate-400 hover:text-purple-400 cursor-pointer transition">
-                        <i class="fa-solid fa-camera text-lg"></i>
-                        <input type="file" id="img-input" accept="image/*" class="hidden" onchange="previewImagen(event)">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Conversaciones</div>
+            <div id="lista-chats" class="space-y-1 overflow-y-auto max-h-[calc(100vh-220px)]">
+                <!-- Carga dinámica de chats -->
+            </div>
+        </div>
+
+        <div class="border-t border-slate-800 pt-4 text-xs text-slate-400 flex items-center justify-between">
+            <span class="flex items-center gap-2"><i class="fa-solid fa-server text-emerald-400"></i> Vercel Serverless</span>
+            <button onclick="exportarChat()" title="Exportar Chat" class="hover:text-slate-200"><i class="fa-solid fa-download"></i></button>
+        </div>
+    </aside>
+
+    <!-- PANEL PRINCIPAL DE CHAT -->
+    <main class="flex-1 flex flex-col h-full relative bg-slate-950">
+        <!-- HEADER -->
+        <header class="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50 backdrop-blur-sm">
+            <div class="flex items-center gap-3">
+                <h1 id="titulo-chat-actual" class="font-semibold text-slate-200">Nueva conversación</h1>
+            </div>
+            <div id="badge-estado" class="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/20 flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Aria Core Active
+            </div>
+        </header>
+
+        <!-- ÁREA DE MENSAJES -->
+        <section id="chat-box" class="flex-1 overflow-y-auto p-6 space-y-6">
+            <!-- Mensajes dinámicos -->
+        </section>
+
+        <!-- CAJA DE ENTRADA CON ARCHIVOS -->
+        <footer class="p-4 border-t border-slate-800 bg-slate-900/40">
+            <div class="max-w-4xl mx-auto flex flex-col gap-2">
+                <!-- PREVIEW ARCHIVOS ADJUNTOS -->
+                <div id="preview-adjuntos" class="flex flex-wrap gap-2 hidden"></div>
+
+                <div class="flex items-center gap-2 bg-slate-900 border border-slate-700/60 rounded-xl p-2 focus-within:border-purple-500 transition">
+                    <label class="p-2 text-slate-400 hover:text-purple-400 cursor-pointer transition" title="Adjuntar código o archivos">
+                        <i class="fa-solid fa-paperclip text-lg"></i>
+                        <input type="file" id="input-archivo" multiple class="hidden" onchange="manejarArchivos(event)">
                     </label>
-                    <input type="text" id="prompt-input" placeholder="Escribe tu mensaje..." class="flex-1 bg-transparent text-slate-100 placeholder-slate-500 text-sm focus:outline-none px-2" onkeypress="if(event.key === 'Enter') enviarMensaje()">
-                    <button onclick="enviarMensaje()" id="btn-send" class="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition flex items-center space-x-1">
+
+                    <textarea id="prompt-input" rows="1" placeholder="Escribe tu mensaje o pide análisis de código/archivos..." 
+                        class="flex-1 bg-transparent text-slate-100 border-none outline-none resize-none px-2 text-sm"
+                        onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); enviarMensaje(); }"></textarea>
+
+                    <button onclick="enviarMensaje()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg transition text-sm font-medium flex items-center gap-2">
                         <span>Enviar</span>
+                        <i class="fa-solid fa-paper-plane"></i>
                     </button>
                 </div>
-                <div id="img-preview-container" class="max-w-4xl mx-auto mt-2 hidden">
-                    <div class="inline-flex items-center space-x-2 bg-slate-800 px-3 py-1 rounded-lg text-xs text-slate-300">
-                        <i class="fa-solid fa-image text-purple-400"></i>
-                        <span id="img-name">imagen.jpg</span>
-                        <button onclick="removerImagen()" class="text-slate-400 hover:text-red-400 ml-2"><i class="fa-solid fa-xmark"></i></button>
-                    </div>
-                </div>
             </div>
-        </main>
-    </div>
+        </footer>
+    </main>
 
     <script>
-        let imagenBase64 = null;
+        let chatActualId = localStorage.getItem("aria_active_chat") || ("chat_" + Date.now());
+        let archivosAdjuntos = [];
 
-        // Toggle Sidebar en Movil
-        document.getElementById('btn-menu').addEventListener('click', () => {
-            const sidebar = document.getElementById('sidebar');
-            sidebar.classList.toggle('-translate-x-full');
-        });
+        window.onload = () => {
+            cargarListaChats();
+            cargarChatActual();
+        };
 
-        function previewImagen(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-            document.getElementById('img-name').innerText = file.name;
-            document.getElementById('img-preview-container').classList.remove('hidden');
-
-            const reader = new FileReader();
-            reader.onload = function(evt) {
-                imagenBase64 = evt.target.result;
-            };
-            reader.readAsDataURL(file);
+        function generarUUID() {
+            return "chat_" + Date.now();
         }
 
-        function removerImagen() {
-            imagenBase64 = null;
-            document.getElementById('img-input').value = '';
-            document.getElementById('img-preview-container').classList.add('hidden');
+        async function cargarListaChats() {
+            try {
+                const res = await fetch("/api/chats");
+                const data = await res.json();
+                const cont = document.getElementById("lista-chats");
+                cont.innerHTML = "";
+
+                if (data.chats.length === 0) {
+                    nuevoChat();
+                    return;
+                }
+
+                data.chats.reverse().forEach(c => {
+                    const active = c.chat_id === chatActualId;
+                    const div = document.createElement("div");
+                    div.className = `flex items-center justify-between p-2 rounded-lg text-sm cursor-pointer transition ${active ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'hover:bg-slate-800 text-slate-400'}`;
+                    div.innerHTML = `
+                        <span onclick="seleccionarChat('${c.chat_id}')" class="truncate flex-1"><i class="fa-regular fa-message mr-2"></i>${c.titulo}</span>
+                        <button onclick="borrarChat('${c.chat_id}')" class="text-slate-500 hover:text-rose-400 p-1"><i class="fa-solid fa-trash text-xs"></i></button>
+                    `;
+                    cont.appendChild(div);
+                });
+            } catch (e) { console.error(e); }
         }
 
-        function agregarMensaje(rol, texto) {
-            const chatBox = document.getElementById('chat-box');
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `flex ${rol === 'usuario' ? 'justify-end' : 'justify-start'} animate-fade-in`;
+        async function seleccionarChat(cid) {
+            chatActualId = cid;
+            localStorage.setItem("aria_active_chat", cid);
+            cargarListaChats();
+            cargarChatActual();
+        }
 
-            const bubble = document.createElement('div');
-            bubble.className = `max-w-[85%] sm:max-w-[75%] rounded-2xl p-4 text-sm ${
-                rol === 'usuario' 
-                ? 'bg-purple-600/30 border border-purple-500/30 text-purple-100 rounded-br-none' 
-                : 'glass-panel border border-slate-700/50 text-slate-200 rounded-bl-none markdown-body'
-            }`;
+        function nuevoChat() {
+            chatActualId = generarUUID();
+            localStorage.setItem("aria_active_chat", chatActualId);
+            document.getElementById("chat-box").innerHTML = `
+                <div class="text-center text-slate-500 mt-20">
+                    <i class="fa-solid fa-wand-magic-sparkles text-4xl mb-4 text-purple-500"></i>
+                    <p class="font-medium text-slate-300">Aria Studio listo para colaborar.</p>
+                    <p class="text-xs">Adjunta código, documentos o inicia una nueva consulta.</p>
+                </div>
+            `;
+            document.getElementById("titulo-chat-actual").innerText = "Nueva conversación";
+            cargarListaChats();
+        }
 
-            if (rol === 'agente') {
-                bubble.innerHTML = marked.parse(texto);
-            } else {
-                bubble.innerText = texto;
+        async function cargarChatActual() {
+            try {
+                const res = await fetch(`/api/chats/${chatActualId}`);
+                const data = await res.json();
+                document.getElementById("titulo-chat-actual").innerText = data.titulo || "Conversación";
+
+                const chatBox = document.getElementById("chat-box");
+                chatBox.innerHTML = "";
+
+                if (!data.mensajes || data.mensajes.length === 0) return;
+
+                data.mensajes.forEach(m => renderizarMensaje(m.rol, m.contenido));
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } catch (e) { console.error(e); }
+        }
+
+        async function borrarChat(cid) {
+            if (!confirm("¿Eliminar este chat?")) return;
+            await fetch(`/api/chats/${cid}`, { method: "DELETE" });
+            if (cid === chatActualId) nuevoChat();
+            else cargarListaChats();
+        }
+
+        function manejarArchivos(e) {
+            const files = Array.from(e.target.files);
+            files.forEach(f => {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    archivosAdjuntos.push({
+                        nombre: f.name,
+                        mime_type: f.type || "text/plain",
+                        contenido_b64: event.target.result
+                    });
+                    renderizarPreviewAdjuntos();
+                };
+                reader.readAsDataURL(f);
+            });
+        }
+
+        function renderizarPreviewAdjuntos() {
+            const cont = document.getElementById("preview-adjuntos");
+            cont.innerHTML = "";
+            if (archivosAdjuntos.length === 0) {
+                cont.classList.add("hidden");
+                return;
             }
+            cont.classList.remove("hidden");
+            archivosAdjuntos.forEach((a, idx) => {
+                const chip = document.createElement("div");
+                chip.className = "bg-slate-800 text-xs px-3 py-1 rounded-full border border-slate-700 flex items-center gap-2 text-slate-300";
+                chip.innerHTML = `
+                    <i class="fa-solid fa-file text-purple-400"></i>
+                    <span>${a.nombre}</span>
+                    <button onclick="eliminarAdjunto(${idx})" class="hover:text-rose-400"><i class="fa-solid fa-xmark"></i></button>
+                `;
+                cont.appendChild(chip);
+            });
+        }
 
-            msgDiv.appendChild(bubble);
-            chatBox.appendChild(msgDiv);
-            chatBox.scrollTop = chatBox.scrollHeight;
+        function eliminarAdjunto(idx) {
+            archivosAdjuntos.splice(idx, 1);
+            renderizarPreviewAdjuntos();
         }
 
         async function enviarMensaje() {
-            const input = document.getElementById('prompt-input');
+            const input = document.getElementById("prompt-input");
             const prompt = input.value.trim();
-            if (!prompt && !imagenBase64) return;
+            if (!prompt && archivosAdjuntos.length === 0) return;
 
-            const userText = prompt || "[Imagen enviada]";
-            agregarMensaje('usuario', userText);
+            renderizarMensaje("usuario", prompt);
+            input.value = "";
 
-            input.value = '';
-            const imgData = imagenBase64;
-            removerImagen();
+            const payloadArchivos = [...archivosAdjuntos];
+            archivosAdjuntos = [];
+            renderizarPreviewAdjuntos();
 
-            const btnSend = document.getElementById('btn-send');
-            btnSend.disabled = true;
-            btnSend.classList.add('opacity-50');
+            // Indicador de carga
+            const chatBox = document.getElementById("chat-box");
+            const loadingDiv = document.createElement("div");
+            loadingDiv.id = "loading-spinner";
+            loadingDiv.className = "flex items-center gap-2 text-purple-400 text-sm italic";
+            loadingDiv.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin"></i> Aria está procesando tu petición...`;
+            chatBox.appendChild(loadingDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
 
             try {
-                const res = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: prompt, imagen: imgData })
+                const res = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        chat_id: chatActualId,
+                        prompt: prompt,
+                        archivos: payloadArchivos
+                    })
                 });
 
+                document.getElementById("loading-spinner")?.remove();
                 const data = await res.json();
 
                 if (res.ok && data.respuesta) {
-                    agregarMensaje('agente', data.respuesta);
+                    renderizarMensaje("agente", data.respuesta);
+                    cargarListaChats();
                 } else {
-                    const errorDetalle = data.detail || JSON.stringify(data);
-                    agregarMensaje('agente', `⚠️ **Diagnóstico de Error Serverless:**\n\n\`\`\`text\n${errorDetalle}\n\`\`\``);
+                    renderizarMensaje("agente", "⚠️ **Error:** " + (data.detail || "No se pudo procesar la solicitud."));
                 }
-            } catch (err) {
-                agregarMensaje('agente', `⚠️ **Error de Red/Cliente:**\n\n\`\`\`text\n${err.message}\n\`\`\``);
-            } finally {
-                btnSend.disabled = false;
-                btnSend.classList.remove('opacity-50');
+            } catch (e) {
+                document.getElementById("loading-spinner")?.remove();
+                renderizarMensaje("agente", "⚠️ **Error de conexión con el servidor.**");
             }
         }
 
-        function reiniciarChat() {
-            document.getElementById('chat-box').innerHTML = '';
+        function renderizarMensaje(rol, contenido) {
+            const chatBox = document.getElementById("chat-box");
+            const isUser = rol === "usuario";
+
+            const wrap = document.createElement("div");
+            wrap.className = `flex gap-4 ${isUser ? 'justify-end' : 'justify-start'}`;
+
+            const avatar = isUser ? '' : `<div class="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center font-bold text-xs shrink-0">A</div>`;
+            const bg = isUser ? 'bg-purple-600 text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-2xl' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-2xl rounded-tl-none p-5 max-w-3xl w-full';
+
+            const parsedContent = isUser ? contenido : marked.parse(contenido);
+
+            wrap.innerHTML = `
+                ${avatar}
+                <div class="${bg}">
+                    <div class="prose prose-invert max-w-none text-sm leading-relaxed">${parsedContent}</div>
+                </div>
+            `;
+
+            chatBox.appendChild(wrap);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            // Resaltar sintaxis de bloques de código
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
         }
 
-        // Cargar árbol de archivos al iniciar
-        fetch('/api/files/tree')
-            .then(res => res.json())
-            .then(data => {
-                const tree = document.getElementById('file-tree');
-                if (data.arbol) {
-                    tree.innerHTML = data.arbol.map(f => `<div class="flex items-center space-x-2"><i class="fa-regular fa-file text-slate-500"></i><span>${f}</span></div>`).join('');
-                }
-            }).catch(() => {});
+        function exportarChat() {
+            const content = document.getElementById("chat-box").innerText;
+            const blob = new Blob([content], { type: "text/markdown" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = `${chatActualId}.md`;
+            a.click();
+        }
     </script>
 </body>
 </html>
