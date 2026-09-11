@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aria Mirror AI Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/tokyo-night-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex font-sans">
+    
+    <aside class="w-64 bg-gray-800 border-r border-gray-700 flex flex-col p-4 hidden md:flex">
+        <h1 class="font-bold text-lg text-purple-400 mb-4">Aria Mirror AI</h1>
+        <div class="text-xs space-y-2 text-gray-300">
+            <div>CPU: <span id="stat-cpu" class="font-mono text-cyan-400">--</span></div>
+            <div>RAM: <span id="stat-ram" class="font-mono text-indigo-400">--</span></div>
+            <div>Disco: <span id="stat-disco" class="font-mono text-emerald-400">--</span></div>
+        </div>
+        <hr class="my-4 border-gray-700">
+        <div class="text-xs font-bold text-gray-400 mb-2">ARCHIVOS WORKSPACE</div>
+        <div id="file-tree" class="flex-1 overflow-y-auto space-y-1 text-xs text-gray-400 font-mono"></div>
+    </aside>
+
+    <main class="flex-1 flex flex-col h-screen max-w-full">
+        <header class="p-4 bg-gray-800 border-b border-gray-700 font-bold text-purple-400 flex justify-between items-center">
+            <span>💬 Asistente Multi-Funcional</span>
+            
+            <!-- Selector desplegable de modo -->
+            <div class="flex items-center gap-2">
+                <label for="modo-agente" class="text-xs text-gray-300">Modo:</label>
+                <select id="modo-agente" class="bg-gray-700 text-xs text-white p-2 rounded border border-gray-600 focus:outline-none">
+                    <option value="general">💬 Consulta General (Solo Texto)</option>
+                    <option value="dev">💻 Desarrollo & Programación</option>
+                    <option value="imagen">🎨 Generación & Edición de Imágenes</option>
+                </select>
+            </div>
+        </header>
+
+        <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-950 text-sm"></div>
+
+        <div id="loading" class="hidden px-4 py-2 text-xs text-indigo-400 bg-gray-900 border-t border-gray-800 flex items-center gap-2">
+            <span class="animate-spin">⚡</span> Procesando consulta...
+        </div>
+
+        <div class="p-4 bg-gray-800 border-t border-gray-700 flex gap-2">
+            <input id="user-input" type="text" placeholder="Escribe tu consulta..." class="flex-1 p-3 bg-gray-700 rounded border border-gray-600 focus:outline-none text-white">
+            <button type="button" id="btn-enviar" onclick="enviarMensaje()" class="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded font-bold transition">Enviar</button>
+        </div>
+    </main>
+
+    <script>
+        async function cargarHistorial() {
+            try {
+                const res = await fetch('/api/historial');
+                if (res.ok) {
+                    const data = await res.json();
+                    const container = document.getElementById('messages');
+                    container.innerHTML = '';
+                    data.historial.forEach(m => agregarBubble(m.rol, m.contenido));
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function cargarMetricas() {
+            try {
+                const res = await fetch('/api/system/stats');
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('stat-cpu').innerText = data.metricas.cpu_uso;
+                    document.getElementById('stat-ram').innerText = data.metricas.ram_uso;
+                    document.getElementById('stat-disco').innerText = data.metricas.disco_libre_gb;
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function cargarArbol() {
+            try {
+                const res = await fetch('/api/files/tree');
+                if (res.ok) {
+                    const data = await res.json();
+                    const container = document.getElementById('file-tree');
+                    container.innerHTML = '';
+                    data.arbol.forEach(f => {
+                        const d = document.createElement('div');
+                        d.className = 'truncate hover:text-white cursor-pointer py-0.5';
+                        d.innerText = '📄 ' + f;
+                        container.appendChild(d);
+                    });
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function enviarMensaje() {
+            const input = document.getElementById('user-input');
+            const modo = document.getElementById('modo-agente').value;
+            const text = input.value.trim();
+            if (!text) return;
+
+            agregarBubble('usuario', text);
+            input.value = '';
+            document.getElementById('loading').classList.remove('hidden');
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: text, modo: modo })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    agregarBubble('agente', data.respuesta);
+                } else {
+                    agregarBubble('agente', 'Error en el servidor (' + res.status + ')');
+                }
+            } catch(e) {
+                agregarBubble('agente', 'Error de conexión: ' + e.message);
+            } finally {
+                document.getElementById('loading').classList.add('hidden');
+            }
+        }
+
+        function agregarBubble(rol, texto) {
+            const container = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = rol === 'usuario' ? 'text-right' : 'text-left';
+            
+            const span = document.createElement('div');
+            span.className = 'inline-block p-4 rounded-lg max-w-[85%] text-left ' + 
+                (rol === 'usuario' ? 'bg-purple-600 text-white font-medium' : 'bg-gray-800 text-gray-200 border border-gray-700');
+            
+            if (rol === 'usuario') {
+                span.innerText = texto;
+            } else {
+                span.innerHTML = marked.parse(texto);
+                span.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+            }
+
+            div.appendChild(span);
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        document.getElementById('user-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                enviarMensaje();
+            }
+        });
+
+        window.onload = function() {
+            cargarHistorial();
+            cargarMetricas();
+            cargarArbol();
+            setInterval(cargarMetricas, 10000);
+        };
+    </script>
+</body>
+</html>
