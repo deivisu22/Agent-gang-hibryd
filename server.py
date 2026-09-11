@@ -13,9 +13,13 @@ from pydantic import BaseModel
 from google import genai
 from google.genai.errors import ServerError, ClientError
 from dotenv import load_dotenv
+from apscheduler.schedulers.background import BackgroundScheduler
 
 load_dotenv(override=True)
 
+# -------------------------------------------------------------
+# 1. POOL Y ROTACIÓN AUTOMÁTICA DE API KEYS
+# -------------------------------------------------------------
 KEYS_RAW = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
 API_KEYS = [k.strip() for k in KEYS_RAW.split(",") if k.strip()]
 
@@ -37,7 +41,7 @@ MODELO_PRINCIPAL = "gemini-3.6-flash"
 MODELO_RESPALDO = "gemini-3.5-flash"
 ARCHIVO_MEMORIA = "memoria.json"
 
-app = FastAPI(title="Agente Programador Multi-Entorno")
+app = FastAPI(title="Aria Mirror AI Studio v5.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,6 +51,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# -------------------------------------------------------------
+# 4. TAREAS PROGRAMADAS BACKGROUND (CRON SCHEDULER)
+# -------------------------------------------------------------
+def tarea_mantenimiento_background():
+    print("⏰ [Cron Task] Ejecutando rutina automática de mantenimiento...")
+    try:
+        if os.path.exists("auto_cleaner.py"):
+            subprocess.run(["python", "auto_cleaner.py"], capture_output=True, text=True)
+            print("✅ [Cron Task] Auto-Cleaner completado.")
+    except Exception as e:
+        print(f"❌ [Cron Task Error]: {str(e)}")
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(tarea_mantenimiento_background, 'interval', hours=6)
+scheduler.start()
+
+# -------------------------------------------------------------
+# MEMORIA Y BÚSQUEDA SEMÁNTICA CONTEXTUAL
+# -------------------------------------------------------------
 def cargar_memoria() -> dict:
     if os.path.exists(ARCHIVO_MEMORIA):
         try:
@@ -69,10 +92,10 @@ def guardar_mensaje_historial(rol: str, contenido: str):
         "contenido": contenido,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     })
-    memoria["historial_conversacion"] = memoria["historial_conversacion"][-30:]
+    memoria["historial_conversacion"] = memoria["historial_conversacion"][-40:]
     guardar_memoria(memoria)
 
-def ejecutar_comando_shell(comando: str, timeout_segundos: int = 20) -> tuple[bool, str]:
+def ejecutar_comando_shell(comando: str, timeout_segundos: int = 25) -> tuple[bool, str]:
     comandos_prohibidos = ["rm -rf /", "mkfs", "shutdown", "reboot"]
     if any(p in comando for p in comandos_prohibidos):
         return False, "❌ Comando denegado por políticas de seguridad."
@@ -112,37 +135,51 @@ def obtener_metricas_sistema() -> dict:
         "total_keys_pool": len(API_KEYS)
     }
 
+# -------------------------------------------------------------
+# 1. GENERACIÓN REAL DE IMÁGENES
+# -------------------------------------------------------------
+def generar_imagen_artística(prompt: str) -> str:
+    prompt_encoded = prompt.replace(" ", "%20")
+    url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
+    
+    html_respuesta = (
+        f"🎨 **Imagen Generada Exitosamente:**\n\n"
+        f"![Imagen Generada]({url_imagen})\n\n"
+        f"🔗 [Descargar Imagen HD]({url_imagen})"
+    )
+    return html_respuesta
+
+# -------------------------------------------------------------
+# CONSULTAS MULTI-MODALIDAD
+# -------------------------------------------------------------
 def consultar_gemini(prompt: str, modo: str = "general") -> str:
+    if modo == "imagen":
+        return generar_imagen_artística(prompt)
+
     memoria = cargar_memoria()
     reglas = "\n".join([f"- {r}" for r in memoria.get("reglas_aprendidas", [])])
     arbol = "\n".join(obtener_arbol_proyecto())
     
     conversacion_previa = ""
-    for msg in memoria.get("historial_conversacion", [])[-8:]:
+    for msg in memoria.get("historial_conversacion", [])[-10:]:
         conversacion_previa += f"\n[{msg['rol'].upper()}]: {msg['contenido']}\n"
 
     if modo == "general":
         instrucción_modo = (
             "MODO SELECCIONADO: CONSULTA GENERAL.\n"
-            "REGLA ESTRICTA DE MODO: Responde ÚNICAMENTE con texto explicativo, explicaciones claras y formato narrativo o listas. "
-            "Queda ESTRICTAMENTE PROHIBIDO incluir bloques de código (Python, Bash, JS, etc.) o guiones de automatización en la respuesta."
+            "REGLA ESTRICTA DE MODO: Responde ÚNICAMENTE con texto explicativo y formato narrativo. "
+            "Queda ESTRICTAMENTE PROHIBIDO incluir bloques de código (Python, Bash, JS, etc.)."
         )
     elif modo == "dev":
         instrucción_modo = (
-            "MODO SELECCIONADO: DESARROLLO Y PROGRAMACIÓN.\n"
-            "Proveé explicaciones técnicas, código completo probado, manejo de errores y paso a paso didáctico."
-        )
-    elif modo == "imagen":
-        instrucción_modo = (
-            "MODO SELECCIONADO: GENERACIÓN Y EDICIÓN DE IMÁGENES.\n"
-            "Actúa como experto en Arte Digital y Prompts. Proporciona prompts ultra-detallados en inglés y español para Imagen 3/Midjourney, "
-            "así como parámetros de edición, composición, iluminación y estilo visual."
+            "MODO SELECCIONADO: DESARROLLO Y AGENTE AUTÓNOMO MULTI-ARCHIVO.\n"
+            "Proveé soluciones de arquitectura, explicaciones paso a paso, código completo probado y soporte multi-archivo."
         )
     else:
-        instrucción_modo = "Responder de forma general."
+        instrucción_modo = "Responder de forma clara."
 
     system_prompt = (
-        "Eres un Agente Autónomo Multi-Funcional, Desarrollador Full-Stack y Tutor Personal.\n"
+        "Eres Aria AI, un Agente Autónomo Multi-Funcional, Desarrollador Full-Stack y Tutor Personal.\n"
         f"{instrucción_modo}\n\n"
         f"ESTRUCTURA DEL PROYECTO ACTUAL:\n{arbol}\n\n"
         f"REGLAS APRENDIDAS:\n{reglas}\n\n"
@@ -168,12 +205,30 @@ def consultar_gemini(prompt: str, modo: str = "general") -> str:
 
     raise HTTPException(status_code=503, detail="API Keys ocupadas. Intenta de nuevo.")
 
+# -------------------------------------------------------------
+# 2. MOTOR AGÉNTICO MULTI-ARCHIVO
+# -------------------------------------------------------------
+class EstructuraProyecto(BaseModel):
+    archivos: dict  # {"ruta/archivo.py": "contenido"}
+
 class PeticionChat(BaseModel):
     prompt: str
     modo: Optional[str] = "general"
 
 class PeticionShell(BaseModel):
     comando: str
+
+@app.post("/api/agent/batch-write")
+def batch_write_endpoint(peticion: EstructuraProyecto):
+    creados = []
+    for ruta, contenido in peticion.archivos.items():
+        directorio = os.path.dirname(ruta)
+        if directorio and not os.path.exists(directorio):
+            os.makedirs(directorio, exist_ok=True)
+        with open(ruta, "w", encoding="utf-8") as f:
+            f.write(contenido)
+        creados.append(ruta)
+    return {"exito": True, "archivos_creados": creados}
 
 @app.post("/api/chat")
 def chat_endpoint(peticion: PeticionChat):
