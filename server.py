@@ -124,8 +124,8 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         "contents": [{"parts": parts}]
     }
 
-    # Modelos oficiales probados para la API v1beta REST
-    modelos_disponibles = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-8b"]
+    # Nombres de modelos válidos para la REST API v1beta
+    modelos_disponibles = ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro"]
     errores_acumulados = []
 
     for k_idx in range(len(keys)):
