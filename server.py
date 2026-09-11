@@ -124,16 +124,20 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         "contents": [{"parts": parts}]
     }
 
-    # Modelos aceptados por la API REST oficial de Google
-    modelos_rest = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"]
+    # Probar endpoints REST oficiales
+    endpoints = [
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+        "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent"
+    ]
+    
     errores_acumulados = []
 
     for k_idx in range(len(keys)):
         api_key = obtener_key_actual()
-        for mod in modelos_rest:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={api_key}"
+        for url_base in endpoints:
+            url = f"{url_base}?key={api_key}"
             try:
-                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=8)
                 data = res.json()
                 
                 if res.status_code == 200 and "candidates" in data:
@@ -142,15 +146,15 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
                     guardar_mensaje_historial("agente", texto_resp)
                     return texto_resp
                 else:
-                    err_txt = data.get("error", {}).get("message", res.text)
-                    errores_acumulados.append(f"KeyIdx {k_idx} | Mod {mod} -> Code {res.status_code}: {err_txt}")
+                    err_txt = data.get("error", {}).get("message", res.text[:150])
+                    errores_acumulados.append(f"KeyIdx {k_idx} | Code {res.status_code}: {err_txt}")
             except Exception as e:
-                errores_acumulados.append(f"KeyIdx {k_idx} | Mod {mod} -> Exception: {str(e)}")
+                errores_acumulados.append(f"KeyIdx {k_idx} -> Exception: {str(e)}")
             
             rotar_api_key()
 
     detalle_final = " || ".join(errores_acumulados)
-    raise HTTPException(status_code=500, detail=f"FALLO DE CONEXION REST A GEMINI. Detalles: {detalle_final}")
+    raise HTTPException(status_code=500, detail=f"FALLO REST GEMINI: {detalle_final}")
 
 class PeticionChat(BaseModel):
     prompt: str
