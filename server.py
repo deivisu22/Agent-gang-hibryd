@@ -124,16 +124,16 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         "contents": [{"parts": parts}]
     }
 
-    # Nombres de modelos válidos para la REST API v1beta
-    modelos_disponibles = ["gemini-1.5-flash", "gemini-2.0-flash-exp", "gemini-1.5-pro"]
+    # MODELOS ACTIVOS CONFIRMADOS EN TU API KEY
+    modelos_confirmados = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"]
     errores_acumulados = []
 
     for k_idx in range(len(keys)):
         api_key = obtener_key_actual()
-        for mod in modelos_disponibles:
+        for mod in modelos_confirmados:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={api_key}"
             try:
-                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=8)
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
                 data = res.json()
                 
                 if res.status_code == 200 and "candidates" in data:
@@ -143,14 +143,14 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
                     return texto_resp
                 else:
                     err_txt = data.get("error", {}).get("message", res.text[:120])
-                    errores_acumulados.append(f"Mod {mod} -> {res.status_code}: {err_txt}")
+                    errores_acumulados.append(f"Mod {mod} -> Code {res.status_code}: {err_txt}")
             except Exception as e:
                 errores_acumulados.append(f"Mod {mod} -> Ex: {str(e)}")
             
             rotar_api_key()
 
     detalle_final = " || ".join(errores_acumulados)
-    raise HTTPException(status_code=500, detail=f"DIAGNOSTICO MODELOS: {detalle_final}")
+    raise HTTPException(status_code=500, detail=f"FALLO REST: {detalle_final}")
 
 class PeticionChat(BaseModel):
     prompt: str
