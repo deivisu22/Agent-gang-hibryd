@@ -24,7 +24,7 @@ ARCHIVO_AGENTE = "agente.py"
 ARCHIVO_BACKUP = "agente.py.bak"
 
 # -------------------------------------------------------------
-# GESTOR DE MEMORIA
+# GESTOR DE MEMORIA Y HISTORIAL DE CHAT
 # -------------------------------------------------------------
 
 def cargar_memoria() -> dict:
@@ -34,98 +34,82 @@ def cargar_memoria() -> dict:
                 return json.load(f)
         except Exception:
             pass
-    return {"reglas_aprendidas": [], "historial_de_errores_corregidos": []}
+    return {
+        "reglas_aprendidas": [],
+        "historial_de_errores_corregidos": [],
+        "historial_conversacion": []
+    }
 
 def guardar_memoria(memoria: dict):
     with open(ARCHIVO_MEMORIA, "w", encoding="utf-8") as f:
         json.dump(memoria, f, indent=2, ensure_ascii=False)
 
-def registrar_aprendizaje(error: str, solucion: str):
+def guardar_mensaje_historial(rol: str, contenido: str):
     memoria = cargar_memoria()
-    nuevo_registro = {
-        "error": str(error),
-        "solucion": str(solucion),
+    if "historial_conversacion" not in memoria:
+        memoria["historial_conversacion"] = []
+    
+    memoria["historial_conversacion"].append({
+        "rol": rol,
+        "contenido": contenido,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-    }
-    memoria["historial_de_errores_corregidos"].append(nuevo_registro)
+    })
+    # Mantener últimos 20 mensajes para optimizar contexto
+    memoria["historial_conversacion"] = memoria["historial_conversacion"][-20:]
     guardar_memoria(memoria)
-    print("🧠 [MEMORIA] Lección registrada en memoria.json")
-
-def agregar_regla_manual(nueva_regla: str):
-    memoria = cargar_memoria()
-    if nueva_regla not in memoria.get("reglas_aprendidas", []):
-        memoria["reglas_aprendidas"].append(nueva_regla)
-        guardar_memoria(memoria)
-        print(f"✅ Regla agregada a la memoria: '{nueva_regla}'")
 
 # -------------------------------------------------------------
-# HERRAMIENTAS DE SISTEMA DE ARCHIVOS Y RESPALDO
+# MOTOR CON RAZONAMIENTO AMPLIADO Y MULTILENGUAJE
 # -------------------------------------------------------------
 
-def guardar_script_en_archivo(nombre_archivo: str, contenido_codigo: str):
-    try:
-        with open(nombre_archivo, "w", encoding="utf-8") as f:
-            f.write(contenido_codigo)
-        print(f"💾 [FILE SYSTEM] Script guardado exitosamente en '{nombre_archivo}'")
-        return True
-    except Exception as e:
-        print(f"❌ Error al guardar archivo: {e}")
-        return False
-
-def crear_backup():
-    if os.path.exists(ARCHIVO_AGENTE):
-        shutil.copy(ARCHIVO_AGENTE, ARCHIVO_BACKUP)
-        print(f"🛡️ [SEGURIDAD] Copia de seguridad creada en '{ARCHIVO_BACKUP}'")
-
-def restaurar_backup():
-    if os.path.exists(ARCHIVO_BACKUP):
-        shutil.copy(ARCHIVO_BACKUP, ARCHIVO_AGENTE)
-        print(f"⚠️ [ROLLBACK] Ocurrió un error crítico. Restaurada la versión anterior desde '{ARCHIVO_BACKUP}'")
-
-# -------------------------------------------------------------
-# CONSULTA RESILIENTE
-# -------------------------------------------------------------
-
-def consultar_gemini(prompt: str, max_reintentos: int = 3) -> str:
+def consultar_gemini_avanzado(prompt: str, modo_razonamiento: bool = True) -> str:
     memoria = cargar_memoria()
     reglas = "\n".join([f"- {r}" for r in memoria.get("reglas_aprendidas", [])])
     
-    prompt_con_memoria = (
-        "Instrucciones de contexto y memoria:\n"
-        f"{reglas}\n\n"
-        f"Petición del usuario:\n{prompt}"
+    # Construcción del contexto conversacional previo
+    conversacion_previa = ""
+    for msg in memoria.get("historial_conversacion", [])[-6:]:
+        conversacion_previa += f"\n[{msg['rol'].upper()}]: {msg['contenido']}\n"
+
+    instruccion_sistema = (
+        "Eres un Agente Programador Full-Stack Senior Autónomo.\n"
+        "Sopotas múltiples lenguajes de programación: Python, JavaScript, TypeScript, Go, Rust, HTML/CSS, SQL y Bash.\n\n"
+        "REGLAS DE MEMORIA Y APRENDIZAJE:\n" + reglas + "\n\n"
+        "HISTORIAL RECIENTE DE LA SESIÓN:\n" + conversacion_previa
     )
 
+    if modo_razonamiento:
+        prompt_final = (
+            f"{instruccion_sistema}\n\n"
+            "INSTRUCCIÓN DE RAZONAMIENTO AMPLIADO:\n"
+            "Antes de generar código o respuesta final, realiza una fase de análisis interno "
+            "evaluando arquitectura, casos borde, seguridad y sintaxis del lenguaje objetivo.\n\n"
+            f"PETICIÓN ACTUAL:\n{prompt}"
+        )
+    else:
+        prompt_final = f"{instruccion_sistema}\n\nPETICIÓN ACTUAL:\n{prompt}"
+
     for modelo in [MODELO_PRINCIPAL, MODELO_RESPALDO]:
-        for intento in range(1, max_reintentos + 1):
+        for intento in range(1, 4):
             try:
                 time.sleep(1)
                 response = client.models.generate_content(
                     model=modelo,
-                    contents=prompt_con_memoria
+                    contents=prompt_final
                 )
+                
+                # Registrar interacciones en la memoria conversacional
+                guardar_mensaje_historial("usuario", prompt)
+                guardar_mensaje_historial("agente", response.text)
+                
                 return response.text
             except (ServerError, ClientError) as e:
                 if "503" in str(e) or "429" in str(e):
                     time.sleep(intento * 2)
                 else:
                     break
+
     raise RuntimeError("❌ Servidores de Google no disponibles tras varios intentos.")
-
-def motor_auditor(codigo: str) -> str:
-    prompt_sistema = (
-        "Actúa como un auditor de código Senior. Revisa, corrige errores sintácticos, "
-        "optimiza el rendimiento y devuelve el código Python perfectamente refactorizado.\n\n"
-        "Código a auditar:\n" + str(codigo)
-    )
-    return consultar_gemini(prompt_sistema)
-
-def limpiar_codigo(texto: str) -> str:
-    if "```python" in texto:
-        texto = texto.split("```python")[1].split("```")[0]
-    elif "```" in texto:
-        texto = texto.split("```")[1].split("```")[0]
-    return texto.strip()
 
 def ejecutar_en_sandbox(codigo: str):
     buffer_salida = io.StringIO()
@@ -139,185 +123,46 @@ def ejecutar_en_sandbox(codigo: str):
         sys.stdout = sys.__stdout__
         return False, str(e)
 
-# -------------------------------------------------------------
-# MÓDULO DE AUTO-EVOLUCIÓN (SELF-CODE REFACTORING)
-# -------------------------------------------------------------
-
-def evolucionar_agente(instruccion_mejora: str, max_intentos: int = 3):
-    print(f"\n🧬 [AUTO-EVOLUCIÓN] Iniciando proceso de actualización interna...")
-    print(f"👉 Meta de mejora: '{instruccion_mejora}'")
-    
-    # 1. Leer el propio código fuente
-    try:
-        with open(ARCHIVO_AGENTE, "r", encoding="utf-8") as f:
-            codigo_actual = f.read()
-    except Exception as e:
-        print(f"❌ Error al leer '{ARCHIVO_AGENTE}': {e}")
-        return
-
-    # 2. Crear backup de seguridad
-    crear_backup()
-
-    # 3. Solicitar actualización a Gemini
-    prompt_evoluir = (
-        "Eres un sistema de IA autónomo. Tu objetivo es actualizar tu propio código fuente Python.\n"
-        "A continuación tienes tu código actual:\n\n"
-        f"```python\n{codigo_actual}\n```\n\n"
-        f"Aplica la siguiente mejora o modificación requerida sin romper el flujo de CLI ni las funciones existentes:\n"
-        f"'{instruccion_mejora}'\n\n"
-        "REGLA ESTRICTA DE SINTAXIS: Asegúrate de que todas las comillas, triples comillas y f-strings estén perfectamente cerradas.\n"
-        "Responde ÚNICAMENTE con el código Python completo y actualizado dentro de un bloque markdown python."
-    )
-
-    print("🧠 Analizando y reescribiendo código propio...")
-    codigo_nuevo_raw = consultar_gemini(prompt_evoluir)
-    codigo_nuevo = limpiar_codigo(codigo_nuevo_raw)
-
-    # 4. Probar el nuevo código en Sandbox con reintentos de corrección
-    print("⚙️ Verificando la integridad del nuevo código en Sandbox...")
-    
-    exito = False
-    resultado = ""
-
-    for intento in range(1, max_intentos + 1):
-        exito, resultado = ejecutar_en_sandbox(codigo_nuevo)
-        
-        if exito:
-            print(f"✅ ¡El nuevo código pasó las pruebas de sintaxis y ejecución en el intento {intento}!")
-            break
-        else:
-            print(f"⚠️ Error sintáctico en intento {intento}/{max_intentos}: {resultado}")
-            print("🛠️ Solicitando auto-corrección de la nueva versión del agente...")
-            
-            prompt_correccion_propia = (
-                "El código Python que generaste para actualizar el agente tiene un error de sintaxis al ejecutarse:\n\n"
-                f"```python\n{codigo_nuevo}\n```\n\n"
-                f"Error producido:\n{resultado}\n\n"
-                "Corrige el error de sintaxis (comillas, sangrías o f-strings). "
-                "Devuelve ÚNICAMENTE el código Python completo corregido dentro de un bloque markdown python."
-            )
-            codigo_nuevo_raw = consultar_gemini(prompt_correccion_propia)
-            codigo_nuevo = limpiar_codigo(codigo_nuevo_raw)
-
-    # 5. Aplicar cambios o hacer Rollback definitivo
-    if exito:
-        guardar_script_en_archivo(ARCHIVO_AGENTE, codigo_nuevo)
-        print("🚀 [ÉXITO] El agente ha evolucionado. Sal de la sesión con 'salir' y vuelve a ejecutar 'python agente.py' para cargar los cambios.")
-    else:
-        print(f"❌ No se pudo auto-corregir la nueva versión tras {max_intentos} intentos.")
-        restaurar_backup()
-
-# -------------------------------------------------------------
-# ORQUESTATOR DEL AGENTE
-# -------------------------------------------------------------
-
-def ejecutar_agente(tarea: str, guardar_como: str = None, max_intentos: int = 3):
-    print(f"\n🚀 [1/3] Diseñando solución para: '{tarea}'...")
-    prompt_inicial = (
-        f"Escribe un script en Python completo y funcional para: {tarea}.\n"
-        "Incluye pruebas al final con print() para verificar su salida.\n"
-        "Responde ÚNICAMENTE con el código en un bloque markdown python."
-    )
-    
-    codigo_raw = consultar_gemini(prompt_inicial)
-    codigo_limpio = limpiar_codigo(codigo_raw)
-    
-    print("🔍 [2/3] Auditando y refactorizando...")
-    codigo_refactorizado = motor_auditor(codigo_limpio)
-    codigo_final = limpiar_codigo(codigo_refactorizado)
-    
-    print("⚙️ Ejecutando en Sandbox...")
-    exito, resultado = False, ""
-    
-    for intento in range(1, max_intentos + 1):
-        print(f"   👉 Intento {intento}/{max_intentos}...")
-        exito, resultado = ejecutar_en_sandbox(codigo_final)
-        
-        if exito:
-            print("   ✅ ¡Ejecución limpia y sin errores!")
-            break
-        else:
-            print(f"   ⚠️ Error detectado: {resultado}")
-            print("   🛠️ Auto-corrigiendo script...")
-            prompt_correccion = (
-                "El siguiente código Python falló al ejecutarse:\n\n"
-                + codigo_final + "\n\nError producido:\n" + str(resultado) +
-                "\n\nCorrige el código. Devuelve ÚNICAMENTE el código corregido en un bloque python."
-            )
-            codigo_final = limpiar_codigo(consultar_gemini(prompt_correccion))
-            registrar_aprendizaje(resultado, "Auto-corrección tras fallo en sandbox")
-
-    print("\n⚡ [3/3] Resumiendo resultado...")
-    resumen = consultar_gemini("Resume en 2 oraciones qué hace este código:\n\n" + codigo_final)
-    
+def procesar_solicitud(tarea: str):
+    print(f"\n🧠 [RAZONAMIENTO AMPLIADO] Analizando la tarea en múltiples lenguajes...")
+    respuesta = consultar_gemini_avanzado(tarea, modo_razonamiento=True)
     print("\n" + "="*60)
-    print("ESTADO:", "ÉXITO EN SANDBOX" if exito else "ERROR NO RESUELTO")
-    print("\nSALIDA DE CONSOLA:")
-    print(resultado if exito else "No ejecutó correctamente.")
-    print("\nRESUMEN TÉCNICO:")
-    print(resumen)
-    print("\nCÓDIGO PYTHON FINAL:")
-    print(codigo_final)
+    print("RESPUESTA DEL AGENTE:")
+    print("="*60)
+    print(respuesta)
     print("="*60)
 
-    if exito and guardar_como:
-        guardar_script_en_archivo(guardar_como, codigo_final)
-
 # -------------------------------------------------------------
-# CLI INTERACTIVO (CONSOLA EN TIEMPO REAL)
+# CLI INTERACTIVO
 # -------------------------------------------------------------
 
 def iniciar_cli():
     print("\n========================================================")
-    print("🤖 AGENTE PROGRAMADOR HÍBRIDO - MODO CONSOLA INTERACTIVA")
+    print("🤖 AGENTE PROGRAMADOR MULTI-LENGUAJE CON RAZONAMIENTO")
     print("========================================================")
-    print("Comandos especiales:")
-    print("  • 'salir'                           : Finaliza la sesión.")
-    print("  • 'memoria'                         : Muestra las reglas en memoria.")
-    print("  • 'regla <texto>'                   : Agrega una nueva regla a memoria.")
-    print("  • 'guardar <archivo.py> | <tarea>'  : Genera y guarda en archivo.")
-    print("  • 'evoluir <mejora>'                : Modifica su propio código fuente.")
+    print("Comandos: 'salir', 'historial', 'limpiar_historial'")
     print("--------------------------------------------------------\n")
 
     while True:
         try:
-            user_input = input("\n💬 Petición o Comando > ").strip()
-            
+            user_input = input("\n💬 Petición > ").strip()
             if not user_input:
                 continue
-                
-            if user_input.lower() in ["salir", "exit", "quit"]:
-                print("👋 Cerrando sesión del agente. ¡Hasta luego!")
+            if user_input.lower() in ["salir", "exit"]:
                 break
-                
-            elif user_input.lower() == "memoria":
+            elif user_input.lower() == "historial":
                 mem = cargar_memoria()
-                print("\n🧠 REGLAS APRENDIDAS:")
-                for i, r in enumerate(mem.get("reglas_aprendidas", []), 1):
-                    print(f"  {i}. {r}")
-                print(f"\n📊 Total errores corregidos registrados: {len(mem.get('historial_de_errores_corregidos', []))}")
-                
-            elif user_input.lower().startswith("regla "):
-                nueva_r = user_input[6:].strip()
-                agregar_regla_manual(nueva_r)
-
-            elif user_input.lower().startswith("evoluir "):
-                mejora = user_input[8:].strip()
-                evolucionar_agente(mejora)
-                
-            elif user_input.lower().startswith("guardar "):
-                partes = user_input[8:].split("|")
-                if len(partes) == 2:
-                    nombre_archivo = partes[0].strip()
-                    tarea = partes[1].strip()
-                    ejecutar_agente(tarea, guardar_como=nombre_archivo)
-                else:
-                    print("⚠️ Uso correcto: guardar mi_script.py | Crear una función de ordenamiento...")
+                print("\n📜 HISTORIAL CONVERSACIONAL:")
+                for m in mem.get("historial_conversacion", []):
+                    print(f"[{m['timestamp']}] {m['rol'].upper()}: {m['contenido'][:80]}...")
+            elif user_input.lower() == "limpiar_historial":
+                mem = cargar_memoria()
+                mem["historial_conversacion"] = []
+                guardar_memoria(mem)
+                print("🧹 Historial conversacional limpiado.")
             else:
-                ejecutar_agente(user_input)
-                
+                procesar_solicitud(user_input)
         except KeyboardInterrupt:
-            print("\n👋 Sesión interrumpida.")
             break
 
 if __name__ == "__main__":
