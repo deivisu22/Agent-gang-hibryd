@@ -202,7 +202,7 @@ def chat_endpoint(peticion: PeticionChat):
 
     historial = obtener_historial_chat(peticion.chat_id)
     conversacion_previa = ""
-    for msg in historial[-8:]:
+    for msg in historial[-6:]:
         conversacion_previa += f"\n[{msg['rol'].upper()} - {msg.get('timestamp', '')}]: {msg['contenido']}\n"
 
     role_instruction = ROLES_PROMPTS.get(peticion.modo_rol, ROLES_PROMPTS["dev"])
@@ -220,18 +220,22 @@ def chat_endpoint(peticion: PeticionChat):
             if "text" in arch.mime_type or "json" in arch.mime_type or any(arch.nombre.endswith(ext) for ext in [".py", ".csv", ".sql", ".js", ".html", ".css", ".txt"]):
                 try:
                     decoded_text = base64.b64decode(arch.contenido_b64.split(",")[-1]).decode("utf-8", errors="ignore")
-                    parts.append({"text": f"--- ARCHIVO/CÓDIGO: {arch.nombre} ---\n{decoded_text}\n--- FIN ARCHIVO ---"})
+                    # Truncar código extremadamente largo para evitar Read Timeout
+                    if len(decoded_text) > 20000:
+                        decoded_text = decoded_text[:20000] + "\n... [CÓDIGO TRUNCADO POR TAMAÑO]"
+                    parts.append({"text": f"--- ARCHIVO/CÓDIGO ADJUNTO: {arch.nombre} ---\n{decoded_text}\n--- FIN ARCHIVO ---"})
                 except Exception:
                     pass
             else:
                 encoded = arch.contenido_b64.split(",")[-1]
                 parts.append({"inline_data": {"mime_type": arch.mime_type, "data": encoded}})
 
-    prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {peticion.prompt if peticion.prompt else 'Analiza los componentes.'}"
+    prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {peticion.prompt if peticion.prompt else 'Analiza los archivos adjuntos.'}"
     parts.append({"text": prompt_final})
 
     payload = {"contents": [{"parts": parts}]}
-    modelos = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"]
+    # MODELOS ACTUALIZADOS SEGÚN LA API DE GOOGLE
+    modelos = ["gemini-3.6-flash", "gemini-1.5-flash", "gemini-flash-latest"]
     errores = []
 
     for k_idx in range(len(keys)):
@@ -239,7 +243,7 @@ def chat_endpoint(peticion: PeticionChat):
         for mod in modelos:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={api_key}"
             try:
-                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=12)
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=20)
                 data = res.json()
                 if res.status_code == 200 and "candidates" in data:
                     texto_resp = data["candidates"][0]["content"]["parts"][0]["text"]

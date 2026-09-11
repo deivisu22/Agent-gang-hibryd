@@ -38,7 +38,6 @@
                 </button>
             </div>
 
-            <!-- SELECTOR DE ROL -->
             <div class="mb-4">
                 <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Modo / Rol Active</label>
                 <select id="select-rol" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-purple-300 font-medium outline-none">
@@ -54,7 +53,7 @@
 
         <div class="border-t border-slate-800 pt-4 text-xs text-slate-400 flex items-center justify-between">
             <span class="flex items-center gap-2"><i class="fa-solid fa-server text-emerald-400"></i> Serverless Active</span>
-            <button onclick="exportarChat()" title="Exportar Registro del Chat" class="hover:text-purple-300 flex items-center gap-1 bg-slate-800 px-2 py-1 rounded border border-slate-700">
+            <button onclick="exportarChat()" title="Exportar Registro" class="hover:text-purple-300 flex items-center gap-1 bg-slate-800 px-2 py-1 rounded border border-slate-700">
                 <i class="fa-solid fa-file-export"></i> Exportar
             </button>
         </div>
@@ -63,7 +62,6 @@
     <!-- PANEL PRINCIPAL -->
     <main class="flex-1 flex h-full relative bg-slate-950 overflow-hidden">
         
-        <!-- ÁREA DE CHAT -->
         <div class="flex-1 flex flex-col h-full border-r border-slate-800">
             <header class="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50">
                 <div>
@@ -107,13 +105,13 @@
             </footer>
         </div>
 
-        <!-- PANEL SPLIT SCREEN (CODE EDITOR) -->
+        <!-- SPLIT SCREEN CODE EDITOR -->
         <div id="editor-panel" class="w-1/2 h-full bg-slate-900 border-l border-slate-800 flex flex-col hidden">
             <div class="h-14 border-b border-slate-800 flex items-center justify-between px-4 bg-slate-950">
                 <span class="text-xs font-semibold text-slate-300 flex items-center gap-2"><i class="fa-solid fa-code text-purple-400"></i> Editor de Código / Archivos</span>
                 <button onclick="toggleSplitScreen()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <textarea id="code-editor-text" class="flex-1 bg-slate-950 text-slate-200 font-mono text-xs p-4 border-none outline-none resize-none" placeholder="// Pega tu código Python, SQL, JSON o datos contables aquí para enviarlo a Aria..."></textarea>
+            <textarea id="code-editor-text" class="flex-1 bg-slate-950 text-slate-200 font-mono text-xs p-4 border-none outline-none resize-none" placeholder="// Pega tu código Python, SQL, JSON o datos contables aquí..."></textarea>
             <div class="p-3 border-t border-slate-800 bg-slate-900 flex justify-end">
                 <button onclick="enviarDesdeEditor()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium">Inyectar Código al Chat</button>
             </div>
@@ -245,7 +243,10 @@
             if (!prompt && archivosAdjuntos.length === 0) return;
 
             const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            renderizarMensaje("usuario", prompt, timeNow);
+            
+            // Texto por defecto si solo se envió un archivo
+            const textoUsuario = prompt || `📁 *Archivo adjunto enviado para análisis* (${archivosAdjuntos.map(a => a.nombre).join(', ')})`;
+            renderizarMensaje("usuario", textoUsuario, timeNow);
             input.value = "";
 
             const payloadArchivos = [...archivosAdjuntos];
@@ -269,7 +270,7 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         chat_id: chatActualId,
-                        prompt: prompt,
+                        prompt: prompt || "Analiza el archivo adjunto enviado.",
                         modo_rol: modoRol,
                         web_search: webSearch,
                         archivos: payloadArchivos
@@ -294,9 +295,15 @@
             const chatBox = document.getElementById("chat-box");
             const isUser = rol === "usuario";
             const wrap = document.createElement("div");
-            wrap.className = `flex gap-4 ${isUser ? 'justify-end' : 'justify-start'}`;
-            const avatar = isUser ? '' : `<div class="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center font-bold text-xs shrink-0">A</div>`;
-            const bg = isUser ? 'bg-purple-600 text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-2xl' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-2xl rounded-tl-none p-5 max-w-3xl w-full';
+            wrap.className = `flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`;
+
+            const avatar = isUser 
+                ? `<div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-xs shrink-0 text-white">U</div>`
+                : `<div class="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center font-bold text-xs shrink-0 text-white">A</div>`;
+
+            const bg = isUser 
+                ? 'bg-purple-600/90 text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-2xl' 
+                : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-2xl rounded-tl-none p-5 max-w-3xl w-full';
 
             const footerTime = timestamp ? `<span class="text-[10px] opacity-60 block mt-2 ${isUser ? 'text-right' : 'text-left'}">${timestamp}</span>` : '';
 
