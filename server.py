@@ -41,7 +41,6 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-# --- PERSISTENCIA (REDIS / LOCAL) ---
 UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL", "").rstrip("/")
 UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
 ARCHIVO_MEMORIA = "/tmp/aria_chats.json"
@@ -117,47 +116,21 @@ def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str 
     sesiones[chat_id]["mensajes"] = sesiones[chat_id]["mensajes"][-40:]
     guardar_todas_sesiones(sesiones)
 
-# --- BÚSQUEDA WEB ---
-def realizar_busqueda_google(query: str) -> list[str]:
-    results = []
-    google_api_key = os.getenv("GOOGLE_SEARCH_API_KEY", "")
-    google_cx = os.getenv("GOOGLE_SEARCH_CX", "")
-    if google_api_key and google_cx:
-        try:
-            url = f"https://www.googleapis.com/customsearch/v1?q={requests.utils.quote(query)}&key={google_api_key}&cx={google_cx}&num=3"
-            res = requests.get(url, timeout=5)
-            if res.status_code == 200:
-                for item in res.json().get("items", []):
-                    results.append(f"[Google] {item.get('title')}: {item.get('snippet')} ({item.get('link')})")
-        except Exception:
-            pass
-    return results
-
-def realizar_busqueda_duckduckgo(query: str) -> list[str]:
-    results = []
+# LECTURA DE PROPIO CÓDIGO
+def leer_propio_codigo() -> str:
     try:
-        url = f"https://html.duckduckgo.com/html/?q={requests.utils.quote(query)}"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code == 200 and "result__snippet" in res.text:
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(res.text, "html.parser")
-            for s in soup.find_all("a", class_="result__snippet")[:3]:
-                results.append(f"[DuckDuckGo] {s.get_text().strip()}")
+        if os.path.exists("server.py"):
+            with open("server.py", "r", encoding="utf-8") as f:
+                return f.read()[:15000]
     except Exception:
         pass
-    return results
+    return "# Código base no accesible dinámicamente"
 
-def realizar_busqueda_web_hibrida(query: str) -> str:
-    hallazgos = realizar_busqueda_google(query) + realizar_busqueda_duckduckgo(query)
-    return "\n".join(hallazgos[:5]) if hallazgos else "Sin resultados adicionales en web."
-
-# --- SYSTEM PROMPTS ---
 ROLES_PROMPTS = {
     "dev": (
         "Eres Aria AI en modo FULL STACK DEVELOPER y Arquitecta de Software.\n"
         "Especialista en Python, JavaScript, FastAPI, APIs de Google Gemini y arquitecturas serverless.\n"
-        "Proporciona soluciones directas, modulares, eficientes y listas para producción."
+        "Analiza el problema paso a paso con razonamiento amplio antes de entregar la solución."
     ),
     "accounting": (
         "Eres Aria AI en modo ANALISTA CONTABLE Y FISCAL EXPERTO EN VENEZUELA.\n"
@@ -179,6 +152,8 @@ class PeticionChat(BaseModel):
     prompt: str
     modo_rol: Optional[str] = "dev"
     web_search: Optional[bool] = False
+    leer_codigo_propio: Optional[bool] = False
+    instrucciones_custom: Optional[str] = ""
     archivos: Optional[List[ArchivoAdjunto]] = None
 
 @app.post("/api/chat")
@@ -188,17 +163,22 @@ def chat_endpoint(peticion: PeticionChat):
         raise HTTPException(status_code=500, detail="GEMINI_API_KEYS no configurada.")
 
     role_instruction = ROLES_PROMPTS.get(peticion.modo_rol, ROLES_PROMPTS["dev"])
-    if peticion.web_search and peticion.prompt:
-        contexto_web = realizar_busqueda_web_hibrida(peticion.prompt)
-        role_instruction += f"\n\nINFORMACIÓN EN TIEMPO REAL:\n{contexto_web}"
+    
+    # Inyección de Instrucciones Personalizadas
+    if peticion.instrucciones_custom and peticion.instrucciones_custom.strip():
+        role_instruction += f"\n\nINSTRUCCIONES ADICIONALES DEL USUARIO:\n{peticion.instrucciones_custom.strip()}"
 
-    # Construir historial previo
+    # Inyección de lectura de propio código
+    if peticion.leer_codigo_propio:
+        codigo_server = leer_propio_codigo()
+        role_instruction += f"\n\n[CÓDIGO FUENTE DE TU PROPIO BACKEND (server.py)]:\n{codigo_server}\n[FIN CÓDIGO FUENTE]"
+
     historial = obtener_historial_chat(peticion.chat_id)
     conversacion_previa = ""
     for msg in historial[-6:]:
         conversacion_previa += f"\n[{msg.get('rol', 'usuario').upper()}]: {msg.get('contenido', '')}\n"
 
-    system_instruction_completa = f"{role_instruction}\n\nHISTORIAL DE CHAT:\n{conversacion_previa}"
+    system_instruction_completa = f"{role_instruction}\n\nHISTORIAL DE CHAT PREVIO:\n{conversacion_previa}"
 
     current_parts = []
     if peticion.archivos:
@@ -218,14 +198,13 @@ def chat_endpoint(peticion: PeticionChat):
                 encoded = arch.contenido_b64.split(",")[-1]
                 current_parts.append({"inline_data": {"mime_type": arch.mime_type, "data": encoded}})
 
-    prompt_texto = peticion.prompt if peticion.prompt.strip() else "Analiza los archivos adjuntos."
+    prompt_texto = peticion.prompt if peticion.prompt.strip() else "Analiza el contexto y proporciona una respuesta razonada."
     current_parts.append({"text": f"{system_instruction_completa}\n\nPETICIÓN ACTUAL: {prompt_texto}"})
 
     payload = {
         "contents": [{"parts": current_parts}]
     }
 
-    # MODELOS CONFIRMADOS ACTIVOS EN TU API KEY
     modelos = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"]
     errores = []
 
@@ -234,7 +213,7 @@ def chat_endpoint(peticion: PeticionChat):
         for mod in modelos:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={api_key}"
             try:
-                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=20)
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=25)
                 data = res.json()
 
                 if res.status_code == 200 and "candidates" in data:
@@ -251,6 +230,17 @@ def chat_endpoint(peticion: PeticionChat):
         rotar_api_key()
 
     raise HTTPException(status_code=500, detail=f"FALLO ARIA SUITE: {' || '.join(errores)}")
+
+# ENDPOINT PARA CONEXIÓN A GITHUB (EJEMPLO DE INTEGRACIÓN PLATAFORMAS)
+@app.get("/api/integrations/github/repos")
+def github_repos(token: str):
+    try:
+        res = requests.get("https://api.github.com/user/repos", headers={"Authorization": f"token {token}"}, timeout=5)
+        if res.status_code == 200:
+            return {"repos": [r.get("full_name") for r in res.json()[:10]]}
+    except Exception:
+        pass
+    return {"repos": []}
 
 @app.get("/api/chats")
 def listar_chats():
