@@ -16,13 +16,12 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Modelos principal y de respaldo
 MODELO_PRINCIPAL = "gemini-3.6-flash"
 MODELO_RESPALDO = "gemini-3.5-flash"
 ARCHIVO_MEMORIA = "memoria.json"
 
 # -------------------------------------------------------------
-# GESTOR DE MEMORIA Y APRENDIZAJE
+# GESTOR DE MEMORIA
 # -------------------------------------------------------------
 
 def cargar_memoria() -> dict:
@@ -47,10 +46,32 @@ def registrar_aprendizaje(error: str, solucion: str):
     }
     memoria["historial_de_errores_corregidos"].append(nuevo_registro)
     guardar_memoria(memoria)
-    print("🧠 [MEMORIA] Se registró una nueva lección en memoria.json")
+    print("🧠 [MEMORIA] Lección registrada en memoria.json")
+
+def agregar_regla_manual(nueva_regla: str):
+    memoria = cargar_memoria()
+    if nueva_regla not in memoria.get("reglas_aprendidas", []):
+        memoria["reglas_aprendidas"].append(nueva_regla)
+        guardar_memoria(memoria)
+        print(f"✅ Regla agregada a la memoria: '{nueva_regla}'")
 
 # -------------------------------------------------------------
-# CONSULTA RESILIENTE (REINTENTOS AUTOMÁTICOS + FALLBACK)
+# HERRAMIENTAS DEL AGENTE (SISTEMA DE ARCHIVOS)
+# -------------------------------------------------------------
+
+def guardar_script_en_archivo(nombre_archivo: str, contenido_codigo: str):
+    """Guarda el código generado directamente en un archivo físico del proyecto."""
+    try:
+        with open(nombre_archivo, "w", encoding="utf-8") as f:
+            f.write(contenido_codigo)
+        print(f"💾 [FILE SYSTEM] Script guardado exitosamente en '{nombre_archivo}'")
+        return True
+    except Exception as e:
+        print(f"❌ Error al guardar archivo: {e}")
+        return False
+
+# -------------------------------------------------------------
+# CONSULTA RESILIENTE CON MEMORIA
 # -------------------------------------------------------------
 
 def consultar_gemini(prompt: str, max_reintentos: int = 3) -> str:
@@ -58,33 +79,26 @@ def consultar_gemini(prompt: str, max_reintentos: int = 3) -> str:
     reglas = "\n".join([f"- {r}" for r in memoria.get("reglas_aprendidas", [])])
     
     prompt_con_memoria = (
-        "Sigue estrictamente estas reglas de aprendizaje previo:\n"
+        "Instrucciones de contexto y memoria:\n"
         f"{reglas}\n\n"
-        f"Instrucción actual:\n{prompt}"
+        f"Petición del usuario:\n{prompt}"
     )
 
-    modelos_a_probar = [MODELO_PRINCIPAL, MODELO_RESPALDO]
-
-    for modelo in modelos_a_probar:
+    for modelo in [MODELO_PRINCIPAL, MODELO_RESPALDO]:
         for intento in range(1, max_reintentos + 1):
             try:
-                time.sleep(1) # Control de ritmo
+                time.sleep(1)
                 response = client.models.generate_content(
                     model=modelo,
                     contents=prompt_con_memoria
                 )
                 return response.text
             except (ServerError, ClientError) as e:
-                # Captura sobrecarga (503) o cuota temporal (429)
                 if "503" in str(e) or "429" in str(e):
-                    tiempo_espera = intento * 3
-                    print(f"⚠️ Servidor ocupado en '{modelo}' (Error 503/429). Reintentando en {tiempo_espera}s... (Intento {intento}/{max_reintentos})")
-                    time.sleep(tiempo_espera)
+                    time.sleep(intento * 2)
                 else:
-                    break  # Si es otro error (ej. 404/400), pasa al modelo de respaldo
-        print(f"🔄 Cambiando al modelo de respaldo por saturación...")
-
-    raise RuntimeError("❌ No se pudo conectar con los servidores de Google tras varios reintentos.")
+                    break
+    raise RuntimeError("❌ Servidores de Google no disponibles tras varios intentos.")
 
 def motor_auditor(codigo: str) -> str:
     prompt_sistema = (
@@ -114,11 +128,11 @@ def ejecutar_en_sandbox(codigo: str):
         return False, str(e)
 
 # -------------------------------------------------------------
-# ORQUESTATOR PRINCIPAL CON AUTO-CORRECCIÓN Y MEMORIA
+# ORQUESTATOR DEL AGENTE
 # -------------------------------------------------------------
 
-def ejecutar_agente(tarea: str, max_intentos: int = 3):
-    print(f"\n🚀 [1/3] Diseñando solución con memoria activa para: '{tarea}'...")
+def ejecutar_agente(tarea: str, guardar_como: str = None, max_intentos: int = 3):
+    print(f"\n🚀 [1/3] Diseñando solución para: '{tarea}'...")
     prompt_inicial = (
         f"Escribe un script en Python completo y funcional para: {tarea}.\n"
         "Incluye pruebas al final con print() para verificar su salida.\n"
@@ -144,19 +158,16 @@ def ejecutar_agente(tarea: str, max_intentos: int = 3):
             break
         else:
             print(f"   ⚠️ Error detectado: {resultado}")
-            print("   🛠️ Auto-corrigiendo y registrando lección...")
-            
+            print("   🛠️ Auto-corrigiendo script...")
             prompt_correccion = (
                 "El siguiente código Python falló al ejecutarse:\n\n"
                 + codigo_final + "\n\nError producido:\n" + str(resultado) +
                 "\n\nCorrige el código. Devuelve ÚNICAMENTE el código corregido en un bloque python."
             )
-            codigo_corregido_raw = consultar_gemini(prompt_correccion)
-            codigo_final = limpiar_codigo(codigo_corregido_raw)
-            
-            registrar_aprendizaje(resultado, "Código auto-corregido tras fallo en sandbox")
+            codigo_final = limpiar_codigo(consultar_gemini(prompt_correccion))
+            registrar_aprendizaje(resultado, "Auto-corrección tras fallo en sandbox")
 
-    print("\n⚡ [3/3] Generando resumen...")
+    print("\n⚡ [3/3] Resumiendo resultado...")
     resumen = consultar_gemini("Resume en 2 oraciones qué hace este código:\n\n" + codigo_final)
     
     print("\n" + "="*60)
@@ -169,5 +180,60 @@ def ejecutar_agente(tarea: str, max_intentos: int = 3):
     print(codigo_final)
     print("="*60)
 
+    if exito and guardar_como:
+        guardar_script_en_archivo(guardar_como, codigo_final)
+
+# -------------------------------------------------------------
+# CLI INTERACTIVO (CONSOLA EN TIEMPO REAL)
+# -------------------------------------------------------------
+
+def iniciar_cli():
+    print("\n========================================================")
+    print("🤖 AGENTE PROGRAMADOR HÍBRIDO - MODO CONSOLA INTERACTIVA")
+    print("========================================================")
+    print("Comandos especiales:")
+    print("  • 'salir'                  : Finaliza la sesión.")
+    print("  • 'memoria'                : Muestra las reglas en memoria.")
+    print("  • 'regla <texto>'          : Agrega una nueva regla a memoria.")
+    print("  • 'guardar <archivo.py> | <tarea>' : Genera y guarda en archivo.")
+    print("--------------------------------------------------------\n")
+
+    while True:
+        try:
+            user_input = input("\n💬 Petición o Comando > ").strip()
+            
+            if not user_input:
+                continue
+                
+            if user_input.lower() in ["salir", "exit", "quit"]:
+                print("👋 Cerrando sesión del agente. ¡Hasta luego!")
+                break
+                
+            elif user_input.lower() == "memoria":
+                mem = cargar_memoria()
+                print("\n🧠 REGLAS APRENDIDAS:")
+                for i, r in enumerate(mem.get("reglas_aprendidas", []), 1):
+                    print(f"  {i}. {r}")
+                print(f"\n📊 Total errores corregidos registrados: {len(mem.get('historial_de_errores_corregidos', []))}")
+                
+            elif user_input.lower().startswith("regla "):
+                nueva_r = user_input[6:].strip()
+                agregar_regla_manual(nueva_r)
+                
+            elif user_input.lower().startswith("guardar "):
+                partes = user_input[8:].split("|")
+                if len(partes) == 2:
+                    nombre_archivo = partes[0].strip()
+                    tarea = partes[1].strip()
+                    ejecutar_agente(tarea, guardar_como=nombre_archivo)
+                else:
+                    print("⚠️ Uso correcto: guardar mi_script.py | Crear una función de ordenamiento...")
+            else:
+                ejecutar_agente(user_input)
+                
+        except KeyboardInterrupt:
+            print("\n👋 Sesión interrumpida.")
+            break
+
 if __name__ == "__main__":
-    ejecutar_agente("Crear una función que filtre palabras duplicadas de una lista y las devuelva ordenadas alfabéticamente.")
+    iniciar_cli()

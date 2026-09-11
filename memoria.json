@@ -2,7 +2,8 @@
   "reglas_aprendidas": [
     "Usar el modelo gemini-3.6-flash para consultas generales.",
     "Formatear las respuestas de código estrictamente dentro de bloques markdown de python.",
-    "Incluir bloques try-except para capturar excepciones en la sandbox."
+    "Incluir bloques try-except para capturar excepciones en la sandbox.",
+    "Usar siempre typing y type hints en las funciones"
   ],
   "historial_de_errores_corregidos": []
 }
