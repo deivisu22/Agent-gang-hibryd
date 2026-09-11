@@ -1,46 +1,36 @@
 import os
-import sys
 import json
 import time
 import base64
-from typing import List, Optional
+from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from google import genai
-from google.genai import types
-from google.genai.errors import ServerError, ClientError
-from dotenv import load_dotenv
+import google.generativeai as genai
 
-load_dotenv(override=True)
-
-def obtener_keys():
-    KEYS_RAW = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
-    return [k.strip() for k in KEYS_RAW.split(",") if k.strip()]
+KEYS_RAW = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
+API_KEYS = [k.strip() for k in KEYS_RAW.split(",") if k.strip()]
 
 KEY_INDEX = 0
 
-def obtener_cliente_genai():
+def configurar_gemini():
     global KEY_INDEX
-    keys = obtener_keys()
-    if not keys:
+    if not API_KEYS:
         raise HTTPException(
             status_code=503, 
-            detail="Falta la variable GEMINI_API_KEYS en las Environment Variables de Vercel."
+            detail="Falta la variable GEMINI_API_KEYS en Vercel."
         )
-    key_actual = keys[KEY_INDEX % len(keys)]
-    return genai.Client(api_key=key_actual)
+    key_actual = API_KEYS[KEY_INDEX % len(API_KEYS)]
+    genai.configure(api_key=key_actual)
 
 def rotar_api_key():
     global KEY_INDEX
-    keys = obtener_keys()
-    if keys:
-        KEY_INDEX = (KEY_INDEX + 1) % len(keys)
+    if API_KEYS:
+        KEY_INDEX = (KEY_INDEX + 1) % len(API_KEYS)
 
-# Modelos oficiales estándar
-MODELO_PRINCIPAL = "gemini-2.5-flash"
-MODELO_RESPALDO = "gemini-1.5-flash"
+MODELO_PRINCIPAL = "gemini-1.5-flash"
+MODELO_RESPALDO = "gemini-1.5-pro"
 ARCHIVO_MEMORIA = "/tmp/memoria.json"
 
 app = FastAPI(title="Aria Mirror AI Studio")
@@ -60,7 +50,7 @@ def cargar_memoria() -> dict:
                 return json.load(f)
         except Exception:
             pass
-    return {"reglas_aprendidas": [], "historial_conversacion": []}
+    return {"historial_conversacion": []}
 
 def guardar_memoria(memoria: dict):
     try:
@@ -95,9 +85,7 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
     if any(p in prompt.lower() for p in palabras_graficas) and not imagen_b64:
         return generar_imagen_arte(prompt)
 
-    keys = obtener_keys()
-    if not keys:
-        raise HTTPException(status_code=503, detail="Variable GEMINI_API_KEYS no configurada en Vercel.")
+    configurar_gemini()
 
     memoria = cargar_memoria()
     conversacion_previa = ""
@@ -105,8 +93,8 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         conversacion_previa += f"\n[{msg['rol'].upper()}]: {msg['contenido']}\n"
 
     system_instruction = (
-        "Eres Aria AI, un Agente Autónomo Multi-Funcional y Tutor Personal en Vercel Cloud.\n"
-        "Responde de forma directa, concisa y útil.\n"
+        "Eres Aria AI, un Agente Autónomo Multi-Funcional y Tutor Personal desplegado en Vercel.\n"
+        "Responde de forma clara, profesional y directa.\n"
         f"HISTORIAL RECIENTE:\n{conversacion_previa}"
     )
 
@@ -115,26 +103,30 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         header, encoded = imagen_b64.split(",", 1)
         mime_type = header.split(";")[0].split(":")[1]
         data_bytes = base64.b64decode(encoded)
-        contents.append(types.Part.from_bytes(data=data_bytes, mime_type=mime_type))
+        contents.append({"mime_type": mime_type, "data": data_bytes})
 
     prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {prompt if prompt else 'Analiza la imagen.'}"
     contents.append(prompt_final)
 
     ultimo_error = ""
-    for _ in range(len(keys) * 2):
-        client = obtener_cliente_genai()
-        for modelo in [MODELO_PRINCIPAL, MODELO_RESPALDO]:
+    intentos = max(len(API_KEYS) * 2, 2)
+
+    for _ in range(intentos):
+        configurar_gemini()
+        for mod in [MODELO_PRINCIPAL, MODELO_RESPALDO]:
             try:
-                response = client.models.generate_content(model=modelo, contents=contents)
-                guardar_mensaje_historial("usuario", prompt)
-                guardar_mensaje_historial("agente", response.text)
-                return response.text
+                model = genai.GenerativeModel(mod)
+                response = model.generate_content(contents)
+                if response.text:
+                    guardar_mensaje_historial("usuario", prompt)
+                    guardar_mensaje_historial("agente", response.text)
+                    return response.text
             except Exception as e:
                 ultimo_error = str(e)
                 rotar_api_key()
                 time.sleep(0.3)
 
-    raise HTTPException(status_code=503, detail=f"Error en llamadas a Gemini: {ultimo_error}")
+    raise HTTPException(status_code=503, detail=f"Error al conectar con Gemini API: {ultimo_error}")
 
 class PeticionChat(BaseModel):
     prompt: str
