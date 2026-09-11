@@ -2,12 +2,12 @@ import os
 import json
 import time
 import base64
+import requests
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -28,7 +28,7 @@ def obtener_keys() -> list[str]:
     raw = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
     return [k.strip() for k in raw.split(",") if k.strip()]
 
-def configurar_gemini() -> str:
+def obtener_key_actual() -> str:
     global KEY_INDEX
     keys = obtener_keys()
     if not keys:
@@ -36,9 +36,7 @@ def configurar_gemini() -> str:
             status_code=500, 
             detail="Falta la variable GEMINI_API_KEYS en Vercel."
         )
-    key_actual = keys[KEY_INDEX % len(keys)]
-    genai.configure(api_key=key_actual)
-    return key_actual
+    return keys[KEY_INDEX % len(keys)]
 
 def rotar_api_key():
     global KEY_INDEX
@@ -108,36 +106,51 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         f"HISTORIAL RECIENTE:\n{conversacion_previa}"
     )
 
-    contents = []
+    parts = []
     if imagen_b64 and "," in imagen_b64:
         header, encoded = imagen_b64.split(",", 1)
         mime_type = header.split(";")[0].split(":")[1]
-        data_bytes = base64.b64decode(encoded)
-        contents.append({"mime_type": mime_type, "data": data_bytes})
+        parts.append({
+            "inline_data": {
+                "mime_type": mime_type,
+                "data": encoded
+            }
+        })
 
     prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {prompt if prompt else 'Analiza la imagen.'}"
-    contents.append(prompt_final)
+    parts.append({"text": prompt_final})
 
+    payload = {
+        "contents": [{"parts": parts}]
+    }
+
+    # Modelos aceptados por la API REST oficial de Google
+    modelos_rest = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"]
     errores_acumulados = []
 
     for k_idx in range(len(keys)):
-        configurar_gemini()
-        # Nombres exactos aceptados por la REST API v1beta de google-generativeai
-        for mod in ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]:
+        api_key = obtener_key_actual()
+        for mod in modelos_rest:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={api_key}"
             try:
-                model = genai.GenerativeModel(mod)
-                response = model.generate_content(contents)
-                if response and hasattr(response, 'text') and response.text:
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+                data = res.json()
+                
+                if res.status_code == 200 and "candidates" in data:
+                    texto_resp = data["candidates"][0]["content"]["parts"][0]["text"]
                     guardar_mensaje_historial("usuario", prompt)
-                    guardar_mensaje_historial("agente", response.text)
-                    return response.text
+                    guardar_mensaje_historial("agente", texto_resp)
+                    return texto_resp
+                else:
+                    err_txt = data.get("error", {}).get("message", res.text)
+                    errores_acumulados.append(f"KeyIdx {k_idx} | Mod {mod} -> Code {res.status_code}: {err_txt}")
             except Exception as e:
-                err_msg = f"KeyIdx {k_idx} | Mod {mod} -> {str(e)}"
-                errores_acumulados.append(err_msg)
-                rotar_api_key()
+                errores_acumulados.append(f"KeyIdx {k_idx} | Mod {mod} -> Exception: {str(e)}")
+            
+            rotar_api_key()
 
     detalle_final = " || ".join(errores_acumulados)
-    raise HTTPException(status_code=500, detail=f"FALLO DE CONEXION A GEMINI. Detalles: {detalle_final}")
+    raise HTTPException(status_code=500, detail=f"FALLO DE CONEXION REST A GEMINI. Detalles: {detalle_final}")
 
 class PeticionChat(BaseModel):
     prompt: str
