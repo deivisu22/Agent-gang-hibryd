@@ -7,7 +7,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -28,17 +29,17 @@ def obtener_keys() -> list[str]:
     raw = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
     return [k.strip() for k in raw.split(",") if k.strip()]
 
-def configurar_gemini() -> str:
+def obtener_cliente() -> tuple[genai.Client, str]:
     global KEY_INDEX
     keys = obtener_keys()
     if not keys:
         raise HTTPException(
             status_code=500, 
-            detail="Falta la variable GEMINI_API_KEYS en las Environment Variables de Vercel."
+            detail="Falta la variable GEMINI_API_KEYS en Vercel."
         )
     key_actual = keys[KEY_INDEX % len(keys)]
-    genai.configure(api_key=key_actual)
-    return key_actual
+    client = genai.Client(api_key=key_actual)
+    return client, key_actual
 
 def rotar_api_key():
     global KEY_INDEX
@@ -46,8 +47,7 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-# Alias universales compatibles con la API v1beta / v1
-MODELOS = ["gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-pro"]
+MODELOS = ["gemini-2.5-flash", "gemini-2.0-flash"]
 ARCHIVO_MEMORIA = "/tmp/memoria.json"
 
 def cargar_memoria() -> dict:
@@ -96,7 +96,7 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
     if not keys:
         raise HTTPException(
             status_code=500, 
-            detail="Error: GEMINI_API_KEYS no existe en las variables de entorno de Vercel."
+            detail="Error: GEMINI_API_KEYS no configurada en Vercel."
         )
 
     memoria = cargar_memoria()
@@ -105,7 +105,7 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         conversacion_previa += f"\n[{msg['rol'].upper()}]: {msg['contenido']}\n"
 
     system_instruction = (
-        "Eres Aria AI, asistente personal, desarrollador full stack y tutor personal.\n"
+        "Eres Aria AI, mi asistente personal, desarrollador full stack y tutor personal.\n"
         "Responde de forma técnica, dinámica y directa.\n"
         f"HISTORIAL RECIENTE:\n{conversacion_previa}"
     )
@@ -115,7 +115,7 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         header, encoded = imagen_b64.split(",", 1)
         mime_type = header.split(";")[0].split(":")[1]
         data_bytes = base64.b64decode(encoded)
-        contents.append({"mime_type": mime_type, "data": data_bytes})
+        contents.append(types.Part.from_bytes(data=data_bytes, mime_type=mime_type))
 
     prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {prompt if prompt else 'Analiza la imagen.'}"
     contents.append(prompt_final)
@@ -123,11 +123,13 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
     errores_acumulados = []
 
     for k_idx in range(len(keys)):
-        configurar_gemini()
+        client, key_usada = obtener_cliente()
         for mod in MODELOS:
             try:
-                model = genai.GenerativeModel(mod)
-                response = model.generate_content(contents)
+                response = client.models.generate_content(
+                    model=mod,
+                    contents=contents
+                )
                 if response and hasattr(response, 'text') and response.text:
                     guardar_mensaje_historial("usuario", prompt)
                     guardar_mensaje_historial("agente", response.text)
