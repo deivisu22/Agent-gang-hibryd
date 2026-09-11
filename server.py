@@ -47,14 +47,8 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-# Nombres exactos de modelos para la API de Gemini
-MODELOS = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "models/gemini-1.5-flash",
-    "models/gemini-1.5-pro"
-]
-
+# Modelo oficial y compatible con google-genai
+MODELO_OFICIAL = "gemini-1.5-flash"
 ARCHIVO_MEMORIA = "/tmp/memoria.json"
 
 def cargar_memoria() -> dict:
@@ -131,20 +125,19 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
 
     for k_idx in range(len(keys)):
         client, key_usada = obtener_cliente()
-        for mod in MODELOS:
-            try:
-                response = client.models.generate_content(
-                    model=mod,
-                    contents=contents
-                )
-                if response and hasattr(response, 'text') and response.text:
-                    guardar_mensaje_historial("usuario", prompt)
-                    guardar_mensaje_historial("agente", response.text)
-                    return response.text
-            except Exception as e:
-                err_msg = f"KeyIdx {k_idx} | Modelo {mod} -> {str(e)}"
-                errores_acumulados.append(err_msg)
-                rotar_api_key()
+        try:
+            response = client.models.generate_content(
+                model=MODELO_OFICIAL,
+                contents=contents
+            )
+            if response and hasattr(response, 'text') and response.text:
+                guardar_mensaje_historial("usuario", prompt)
+                guardar_mensaje_historial("agente", response.text)
+                return response.text
+        except Exception as e:
+            err_msg = f"KeyIdx {k_idx} -> {str(e)}"
+            errores_acumulados.append(err_msg)
+            rotar_api_key()
 
     detalle_final = " || ".join(errores_acumulados)
     raise HTTPException(status_code=500, detail=f"FALLO DE CONEXION A GEMINI. Detalles: {detalle_final}")
