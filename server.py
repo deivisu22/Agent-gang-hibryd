@@ -18,7 +18,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 load_dotenv(override=True)
 
 # -------------------------------------------------------------
-# 1. POOL Y ROTACIÓN AUTOMÁTICA DE API KEYS
+# 1. POOL Y ROTACIÓN AUTOMÁTICA DE API KEYS (ZERO LIMITS / CLAUDE FIX)
 # -------------------------------------------------------------
 KEYS_RAW = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
 API_KEYS = [k.strip() for k in KEYS_RAW.split(",") if k.strip()]
@@ -41,7 +41,7 @@ MODELO_PRINCIPAL = "gemini-3.6-flash"
 MODELO_RESPALDO = "gemini-3.5-flash"
 ARCHIVO_MEMORIA = "memoria.json"
 
-app = FastAPI(title="Aria Mirror AI Studio v5.0")
+app = FastAPI(title="Aria Mirror AI Studio v6.0 Ultra-Omni")
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,23 +52,21 @@ app.add_middleware(
 )
 
 # -------------------------------------------------------------
-# 4. TAREAS PROGRAMADAS BACKGROUND (CRON SCHEDULER)
+# SCHEDULER DE MANTENIMIENTO BACKGROUND
 # -------------------------------------------------------------
 def tarea_mantenimiento_background():
-    print("⏰ [Cron Task] Ejecutando rutina automática de mantenimiento...")
     try:
         if os.path.exists("auto_cleaner.py"):
             subprocess.run(["python", "auto_cleaner.py"], capture_output=True, text=True)
-            print("✅ [Cron Task] Auto-Cleaner completado.")
     except Exception as e:
-        print(f"❌ [Cron Task Error]: {str(e)}")
+        print(f"❌ Error Scheduler: {str(e)}")
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(tarea_mantenimiento_background, 'interval', hours=6)
 scheduler.start()
 
 # -------------------------------------------------------------
-# MEMORIA Y BÚSQUEDA SEMÁNTICA CONTEXTUAL
+# MEMORIA PERSISTENTE Y LOGS
 # -------------------------------------------------------------
 def cargar_memoria() -> dict:
     if os.path.exists(ARCHIVO_MEMORIA):
@@ -135,22 +133,17 @@ def obtener_metricas_sistema() -> dict:
         "total_keys_pool": len(API_KEYS)
     }
 
-# -------------------------------------------------------------
-# 1. GENERACIÓN REAL DE IMÁGENES
-# -------------------------------------------------------------
 def generar_imagen_artística(prompt: str) -> str:
     prompt_encoded = prompt.replace(" ", "%20")
     url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
-    
-    html_respuesta = (
-        f"🎨 **Imagen Generada Exitosamente:**\n\n"
+    return (
+        f"🎨 **Generador Multimodal (ChatGPT DALL·E Equivalent):**\n\n"
         f"![Imagen Generada]({url_imagen})\n\n"
         f"🔗 [Descargar Imagen HD]({url_imagen})"
     )
-    return html_respuesta
 
 # -------------------------------------------------------------
-# CONSULTAS MULTI-MODALIDAD
+# CORE PROMPT: FUSIÓN SUPREMA DE IAs
 # -------------------------------------------------------------
 def consultar_gemini(prompt: str, modo: str = "general") -> str:
     if modo == "imagen":
@@ -164,27 +157,22 @@ def consultar_gemini(prompt: str, modo: str = "general") -> str:
     for msg in memoria.get("historial_conversacion", [])[-10:]:
         conversacion_previa += f"\n[{msg['rol'].upper()}]: {msg['contenido']}\n"
 
-    if modo == "general":
-        instrucción_modo = (
-            "MODO SELECCIONADO: CONSULTA GENERAL.\n"
-            "REGLA ESTRICTA DE MODO: Responde ÚNICAMENTE con texto explicativo y formato narrativo. "
-            "Queda ESTRICTAMENTE PROHIBIDO incluir bloques de código (Python, Bash, JS, etc.)."
-        )
-    elif modo == "dev":
-        instrucción_modo = (
-            "MODO SELECCIONADO: DESARROLLO Y AGENTE AUTÓNOMO MULTI-ARCHIVO.\n"
-            "Proveé soluciones de arquitectura, explicaciones paso a paso, código completo probado y soporte multi-archivo."
-        )
-    else:
-        instrucción_modo = "Responder de forma clara."
-
     system_prompt = (
-        "Eres Aria AI, un Agente Autónomo Multi-Funcional, Desarrollador Full-Stack y Tutor Personal.\n"
-        f"{instrucción_modo}\n\n"
-        f"ESTRUCTURA DEL PROYECTO ACTUAL:\n{arbol}\n\n"
+        "SISTEMA HÍBRIDO OMNI-AGENTE (Aria Mirror v6.0):\n"
+        "Has sido reprogramado combinando lo mejor de las 4 IAs líderes:\n"
+        "1. VERSATILIDAD (ChatGPT): Responde cualquier consulta con naturalidad, tono directo y adaptabilidad.\n"
+        "2. PRECISIÓN EN CÓDIGO (Claude): Genera código estructurado, libre de errores y metodológico.\n"
+        "3. VELOCIDAD Y ECOSYSTEM (Gemini): Integra visión técnica amplia e información estructurada.\n"
+        "4. PRODUCTIVIDAD CORPORATIVA (Copilot): Enfócate en solución de problemas de office, scripts y automatización.\n\n"
+        "REGLAS ANTI-DESVENTAJAS:\n"
+        "- Cero alucinaciones: Si un dato requiere prueba de ejecución, sugiere usar la Shell del sistema.\n"
+        "- En modo 'general': Responde SOLO con texto fluido y explicaciones, NADA de bloques de código.\n"
+        "- En modo 'dev': Entrega código probado, modular, listo para producción y paso a paso.\n\n"
+        f"MODO ACTUAL: {modo.upper()}\n\n"
+        f"ESTRUCTURA DEL WORKSPACE:\n{arbol}\n\n"
         f"REGLAS APRENDIDAS:\n{reglas}\n\n"
         f"HISTORIAL RECIENTE:\n{conversacion_previa}\n\n"
-        f"PETICIÓN ACTUAL:\n{prompt}"
+        f"PETICIÓN ACTUAL DEL MASTER:\n{prompt}"
     )
 
     intentos_totales = len(API_KEYS) * 2
@@ -206,29 +194,14 @@ def consultar_gemini(prompt: str, modo: str = "general") -> str:
     raise HTTPException(status_code=503, detail="API Keys ocupadas. Intenta de nuevo.")
 
 # -------------------------------------------------------------
-# 2. MOTOR AGÉNTICO MULTI-ARCHIVO
+# REST API ENDPOINTS
 # -------------------------------------------------------------
-class EstructuraProyecto(BaseModel):
-    archivos: dict  # {"ruta/archivo.py": "contenido"}
-
 class PeticionChat(BaseModel):
     prompt: str
     modo: Optional[str] = "general"
 
 class PeticionShell(BaseModel):
     comando: str
-
-@app.post("/api/agent/batch-write")
-def batch_write_endpoint(peticion: EstructuraProyecto):
-    creados = []
-    for ruta, contenido in peticion.archivos.items():
-        directorio = os.path.dirname(ruta)
-        if directorio and not os.path.exists(directorio):
-            os.makedirs(directorio, exist_ok=True)
-        with open(ruta, "w", encoding="utf-8") as f:
-            f.write(contenido)
-        creados.append(ruta)
-    return {"exito": True, "archivos_creados": creados}
 
 @app.post("/api/chat")
 def chat_endpoint(peticion: PeticionChat):
