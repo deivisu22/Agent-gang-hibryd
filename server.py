@@ -124,18 +124,14 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         "contents": [{"parts": parts}]
     }
 
-    # Probar endpoints REST oficiales
-    endpoints = [
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
-        "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent"
-    ]
-    
+    # Modelos oficiales probados para la API v1beta REST
+    modelos_disponibles = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-8b"]
     errores_acumulados = []
 
     for k_idx in range(len(keys)):
         api_key = obtener_key_actual()
-        for url_base in endpoints:
-            url = f"{url_base}?key={api_key}"
+        for mod in modelos_disponibles:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={api_key}"
             try:
                 res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=8)
                 data = res.json()
@@ -146,15 +142,15 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
                     guardar_mensaje_historial("agente", texto_resp)
                     return texto_resp
                 else:
-                    err_txt = data.get("error", {}).get("message", res.text[:150])
-                    errores_acumulados.append(f"KeyIdx {k_idx} | Code {res.status_code}: {err_txt}")
+                    err_txt = data.get("error", {}).get("message", res.text[:120])
+                    errores_acumulados.append(f"Mod {mod} -> {res.status_code}: {err_txt}")
             except Exception as e:
-                errores_acumulados.append(f"KeyIdx {k_idx} -> Exception: {str(e)}")
+                errores_acumulados.append(f"Mod {mod} -> Ex: {str(e)}")
             
             rotar_api_key()
 
     detalle_final = " || ".join(errores_acumulados)
-    raise HTTPException(status_code=500, detail=f"FALLO REST GEMINI: {detalle_final}")
+    raise HTTPException(status_code=500, detail=f"DIAGNOSTICO MODELOS: {detalle_final}")
 
 class PeticionChat(BaseModel):
     prompt: str
