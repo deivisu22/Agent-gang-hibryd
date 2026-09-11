@@ -41,11 +41,11 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-# --- PERSISTENCIA HÍBRIDA: SUPABASE (POSTGRESQL) + UPSTASH + LOCAL ---
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
-UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL", "").rstrip("/")
-UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
+# --- PERSISTENCIA BLINDADA (SUPABASE + UPSTASH + LOCAL) ---
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
+UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL", "").strip().rstrip("/")
+UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "").strip()
 ARCHIVO_MEMORIA = "/tmp/aria_chats.json"
 
 def guardar_en_supabase(sessions: dict) -> bool:
@@ -60,7 +60,7 @@ def guardar_en_supabase(sessions: dict) -> bool:
             "Prefer": "resolution=merge-duplicates"
         }
         payload = [{"id": "global_sessions", "data": sessions}]
-        res = requests.post(url, json=payload, headers=headers, timeout=5)
+        res = requests.post(url, json=payload, headers=headers, timeout=4)
         return res.status_code in [200, 201, 204]
     except Exception:
         return False
@@ -74,7 +74,7 @@ def obtener_de_supabase() -> Optional[dict]:
             "apikey": SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}"
         }
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url, headers=headers, timeout=4)
         if res.status_code == 200:
             rows = res.json()
             if rows and len(rows) > 0:
@@ -89,7 +89,7 @@ def guardar_en_redis(key: str, val: dict) -> bool:
     try:
         url = f"{UPSTASH_URL}/set/{key}"
         headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-        res = requests.post(url, data=json.dumps(val), headers=headers, timeout=5)
+        res = requests.post(url, data=json.dumps(val), headers=headers, timeout=4)
         return res.status_code == 200
     except Exception:
         return False
@@ -100,7 +100,7 @@ def obtener_de_redis(key: str) -> Optional[dict]:
     try:
         url = f"{UPSTASH_URL}/get/{key}"
         headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url, headers=headers, timeout=4)
         if res.status_code == 200:
             data = res.json()
             if data.get("result"):
@@ -110,15 +110,20 @@ def obtener_de_redis(key: str) -> Optional[dict]:
     return None
 
 def cargar_todas_sesiones() -> dict:
-    # 1. Intentar Supabase (Base de datos global permanente)
-    sup_data = obtener_de_supabase()
-    if sup_data is not None:
-        return sup_data
-    # 2. Intentar Upstash Redis
-    redis_data = obtener_de_redis("aria_todas_sesiones")
-    if redis_data is not None:
-        return redis_data
-    # 3. Fallback local /tmp
+    try:
+        sup_data = obtener_de_supabase()
+        if sup_data is not None:
+            return sup_data
+    except Exception:
+        pass
+
+    try:
+        redis_data = obtener_de_redis("aria_todas_sesiones")
+        if redis_data is not None:
+            return redis_data
+    except Exception:
+        pass
+
     if os.path.exists(ARCHIVO_MEMORIA):
         try:
             with open(ARCHIVO_MEMORIA, "r", encoding="utf-8") as f:
@@ -128,8 +133,14 @@ def cargar_todas_sesiones() -> dict:
     return {}
 
 def guardar_todas_sesiones(data: dict):
-    guardar_en_supabase(data)
-    guardar_en_redis("aria_todas_sesiones", data)
+    try:
+        guardar_en_supabase(data)
+    except Exception:
+        pass
+    try:
+        guardar_en_redis("aria_todas_sesiones", data)
+    except Exception:
+        pass
     try:
         with open(ARCHIVO_MEMORIA, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -272,16 +283,6 @@ def chat_endpoint(peticion: PeticionChat):
         rotar_api_key()
 
     raise HTTPException(status_code=500, detail=f"FALLO ARIA SUITE: {' || '.join(errores)}")
-
-# ENDPOINTS DE GOOGLE DRIVE EXPORT / RESPALDO
-class GoogleBackupReq(BaseModel):
-    chat_id: str
-    contenido_markdown: str
-
-@app.post("/api/integrations/google/drive-backup")
-def drive_backup(req: GoogleBackupReq):
-    # Endpoint preparado para almacenar o sincronizar con Google Drive vía Webhook/Token
-    return {"status": "ok", "mensaje": "Respaldo preparado para Google Drive y cuenta de Google vinculada."}
 
 @app.get("/api/chats")
 def listar_chats():
