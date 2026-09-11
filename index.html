@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aria Studio AI - Multi-Agent Enterprise Suite</title>
+    <title>Aria Studio AI - Enterprise Suite</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
@@ -33,14 +33,14 @@
                     <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center font-bold">A</div>
                     <span class="font-bold text-lg tracking-wide bg-gradient-to-r from-purple-400 to-indigo-300 bg-clip-text text-transparent">Aria Studio</span>
                 </div>
-                <button onclick="nuevoChat()" class="p-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-white transition text-sm">
+                <button onclick="nuevoChat()" class="p-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-white transition text-sm" title="Nuevo Chat">
                     <i class="fa-solid fa-plus"></i>
                 </button>
             </div>
 
             <!-- SELECTOR DE ROL -->
             <div class="mb-4">
-                <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Modo / Rol</label>
+                <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Modo / Rol Active</label>
                 <select id="select-rol" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-purple-300 font-medium outline-none">
                     <option value="dev">💻 Full-Stack Developer</option>
                     <option value="accounting">📊 Contable/Fiscal (VE)</option>
@@ -48,23 +48,28 @@
                 </select>
             </div>
 
-            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Conversaciones</div>
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Historial de Chats</div>
             <div id="lista-chats" class="space-y-1 overflow-y-auto max-h-[calc(100vh-280px)]"></div>
         </div>
 
         <div class="border-t border-slate-800 pt-4 text-xs text-slate-400 flex items-center justify-between">
             <span class="flex items-center gap-2"><i class="fa-solid fa-server text-emerald-400"></i> Serverless Active</span>
-            <button onclick="exportarChat()" title="Exportar Chat" class="hover:text-slate-200"><i class="fa-solid fa-download"></i></button>
+            <button onclick="exportarChat()" title="Exportar Registro del Chat" class="hover:text-purple-300 flex items-center gap-1 bg-slate-800 px-2 py-1 rounded border border-slate-700">
+                <i class="fa-solid fa-file-export"></i> Exportar
+            </button>
         </div>
     </aside>
 
-    <!-- PANEL PRINCIPAL & SPLIT SCREEN -->
+    <!-- PANEL PRINCIPAL -->
     <main class="flex-1 flex h-full relative bg-slate-950 overflow-hidden">
         
         <!-- ÁREA DE CHAT -->
         <div class="flex-1 flex flex-col h-full border-r border-slate-800">
             <header class="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50">
-                <h1 id="titulo-chat-actual" class="font-semibold text-slate-200">Nueva conversación</h1>
+                <div>
+                    <h1 id="titulo-chat-actual" class="font-semibold text-slate-200">Nueva conversación</h1>
+                    <span id="fecha-chat-actual" class="text-[10px] text-slate-400 block"></span>
+                </div>
                 
                 <div class="flex items-center gap-4">
                     <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
@@ -136,7 +141,7 @@
                 data.chats.reverse().forEach(c => {
                     const active = c.chat_id === chatActualId;
                     const div = document.createElement("div");
-                    div.className = `flex items-center justify-between p-2 rounded-lg text-sm cursor-pointer transition ${active ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' : 'hover:bg-slate-800 text-slate-400'}`;
+                    div.className = `flex items-center justify-between p-2 rounded-lg text-sm cursor-pointer transition ${active ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30 font-medium' : 'hover:bg-slate-800 text-slate-400'}`;
                     div.innerHTML = `
                         <span onclick="seleccionarChat('${c.chat_id}')" class="truncate flex-1"><i class="fa-regular fa-message mr-2"></i>${c.titulo}</span>
                         <button onclick="borrarChat('${c.chat_id}')" class="text-slate-500 hover:text-rose-400 p-1"><i class="fa-solid fa-trash text-xs"></i></button>
@@ -163,6 +168,7 @@
                 </div>
             `;
             document.getElementById("titulo-chat-actual").innerText = "Nueva conversación";
+            document.getElementById("fecha-chat-actual").innerText = "";
             cargarListaChats();
         }
 
@@ -171,16 +177,19 @@
                 const res = await fetch(`/api/chats/${chatActualId}`);
                 const data = await res.json();
                 document.getElementById("titulo-chat-actual").innerText = data.titulo || "Conversación";
+                document.getElementById("fecha-chat-actual").innerText = data.creado ? `Creado: ${data.creado}` : "";
+                
                 const chatBox = document.getElementById("chat-box");
                 chatBox.innerHTML = "";
                 if (!data.mensajes) return;
-                data.mensajes.forEach(m => renderizarMensaje(m.rol, m.contenido));
+
+                data.mensajes.forEach(m => renderizarMensaje(m.rol, m.contenido, m.timestamp));
                 chatBox.scrollTop = chatBox.scrollHeight;
             } catch (e) { console.error(e); }
         }
 
         async function borrarChat(cid) {
-            if (!confirm("¿Eliminar este chat?")) return;
+            if (!confirm("¿Eliminar este registro de conversación?")) return;
             await fetch(`/api/chats/${cid}`, { method: "DELETE" });
             if (cid === chatActualId) nuevoChat();
             else cargarListaChats();
@@ -235,7 +244,8 @@
             const prompt = input.value.trim();
             if (!prompt && archivosAdjuntos.length === 0) return;
 
-            renderizarMensaje("usuario", prompt);
+            const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            renderizarMensaje("usuario", prompt, timeNow);
             input.value = "";
 
             const payloadArchivos = [...archivosAdjuntos];
@@ -269,7 +279,7 @@
                 document.getElementById("loading-spinner")?.remove();
                 const data = await res.json();
                 if (res.ok && data.respuesta) {
-                    renderizarMensaje("agente", data.respuesta);
+                    renderizarMensaje("agente", data.respuesta, new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
                     cargarListaChats();
                 } else {
                     renderizarMensaje("agente", "⚠️ **Error:** " + (data.detail || "Error en la petición."));
@@ -280,7 +290,7 @@
             }
         }
 
-        function renderizarMensaje(rol, contenido) {
+        function renderizarMensaje(rol, contenido, timestamp = "") {
             const chatBox = document.getElementById("chat-box");
             const isUser = rol === "usuario";
             const wrap = document.createElement("div");
@@ -288,7 +298,9 @@
             const avatar = isUser ? '' : `<div class="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center font-bold text-xs shrink-0">A</div>`;
             const bg = isUser ? 'bg-purple-600 text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-2xl' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-2xl rounded-tl-none p-5 max-w-3xl w-full';
 
-            wrap.innerHTML = `${avatar}<div class="${bg}"><div class="prose prose-invert max-w-none text-sm leading-relaxed">${isUser ? contenido : marked.parse(contenido)}</div></div>`;
+            const footerTime = timestamp ? `<span class="text-[10px] opacity-60 block mt-2 ${isUser ? 'text-right' : 'text-left'}">${timestamp}</span>` : '';
+
+            wrap.innerHTML = `${avatar}<div class="${bg}"><div class="prose prose-invert max-w-none text-sm leading-relaxed">${isUser ? contenido : marked.parse(contenido)}</div>${footerTime}</div>`;
             chatBox.appendChild(wrap);
             chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -310,11 +322,13 @@
         }
 
         function exportarChat() {
+            const titulo = document.getElementById("titulo-chat-actual").innerText;
             const content = document.getElementById("chat-box").innerText;
-            const blob = new Blob([content], { type: "text/markdown" });
+            const headerMD = `# REGISTRO DE CONVERSACIÓN: ${titulo}\nExportado el: ${new Date().toLocaleString()}\n\n---\n\n`;
+            const blob = new Blob([headerMD + content], { type: "text/markdown" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
-            a.download = `${chatActualId}.md`;
+            a.download = `Registro_${chatActualId}.md`;
             a.click();
         }
     </script>

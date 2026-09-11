@@ -97,29 +97,29 @@ def obtener_historial_chat(chat_id: str) -> list:
 
 def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str = "Nueva conversación"):
     sesiones = cargar_todas_sesiones()
+    timestamp_actual = time.strftime("%Y-%m-%d %H:%M:%S")
+    
     if chat_id not in sesiones:
         sesiones[chat_id] = {
             "titulo": titulo if titulo else "Conversación " + time.strftime("%H:%M"),
-            "creado": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "creado": timestamp_actual,
             "mensajes": []
         }
     if len(sesiones[chat_id]["mensajes"]) == 0 and rol == "usuario":
-        sesiones[chat_id]["titulo"] = (contenido[:30] + "...") if len(contenido) > 30 else contenido
+        sesiones[chat_id]["titulo"] = (contenido[:35] + "...") if len(contenido) > 35 else contenido
 
     sesiones[chat_id]["mensajes"].append({
         "rol": rol,
         "contenido": contenido,
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        "timestamp": timestamp_actual
     })
-    sesiones[chat_id]["mensajes"] = sesiones[chat_id]["mensajes"][-30:]
+    sesiones[chat_id]["mensajes"] = sesiones[chat_id]["mensajes"][-40:]
     guardar_todas_sesiones(sesiones)
 
-# MOTOR DE BÚSQUEDA HÍBRIDO: GOOGLE + DUCKDUCKGO
 def realizar_busqueda_google(query: str) -> list[str]:
     results = []
     google_api_key = os.getenv("GOOGLE_SEARCH_API_KEY", "")
     google_cx = os.getenv("GOOGLE_SEARCH_CX", "")
-    
     if google_api_key and google_cx:
         try:
             url = f"https://www.googleapis.com/customsearch/v1?q={requests.utils.quote(query)}&key={google_api_key}&cx={google_cx}&num=3"
@@ -153,20 +153,15 @@ def realizar_busqueda_duckduckgo(query: str) -> list[str]:
 
 def realizar_busqueda_web_hibrida(query: str) -> str:
     hallazgos = []
-    
-    # 1. Intentar Búsqueda vía Google API / Custom Search
     google_res = realizar_busqueda_google(query)
     if google_res:
         hallazgos.extend(google_res)
-        
-    # 2. Complementar o respaldar con DuckDuckGo
     ddg_res = realizar_busqueda_duckduckgo(query)
     if ddg_res:
         hallazgos.extend(ddg_res)
-        
     if hallazgos:
         return "\n".join(hallazgos[:5])
-    return "No se obtuvieron resultados en tiempo real de Google ni DuckDuckGo."
+    return "No se obtuvieron resultados en tiempo real."
 
 ROLES_PROMPTS = {
     "dev": (
@@ -208,7 +203,7 @@ def chat_endpoint(peticion: PeticionChat):
     historial = obtener_historial_chat(peticion.chat_id)
     conversacion_previa = ""
     for msg in historial[-8:]:
-        conversacion_previa += f"\n[{msg['rol'].upper()}]: {msg['contenido']}\n"
+        conversacion_previa += f"\n[{msg['rol'].upper()} - {msg.get('timestamp', '')}]: {msg['contenido']}\n"
 
     role_instruction = ROLES_PROMPTS.get(peticion.modo_rol, ROLES_PROMPTS["dev"])
     
