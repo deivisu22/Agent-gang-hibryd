@@ -1,6 +1,9 @@
 import os
+import sys
 import json
 import time
+import subprocess
+import tempfile
 from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -24,16 +27,11 @@ ARCHIVO_MEMORIA = "memoria.json"
 ADMIN_USER = "admin"
 ADMIN_PASS = "gangsto123"
 
-# Variables de entorno para OAuth (se configuran en .env cuando tengas las credenciales)
-GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
-GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
-
 app = FastAPI(title="Agente Programador Multi-Entorno")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # -------------------------------------------------------------
-# MEMORIA Y HISTORIAL
+# MEMORIA PERSISTENTE
 # -------------------------------------------------------------
 
 def cargar_memoria() -> dict:
@@ -43,7 +41,7 @@ def cargar_memoria() -> dict:
                 return json.load(f)
         except Exception:
             pass
-    return {"reglas_aprendidas": [], "historial_conversacion": [], "cuentas_vinculadas": {}}
+    return {"reglas_aprendidas": [], "historial_conversacion": []}
 
 def guardar_memoria(memoria: dict):
     with open(ARCHIVO_MEMORIA, "w", encoding="utf-8") as f:
@@ -63,6 +61,45 @@ def guardar_mensaje_historial(rol: str, contenido: str):
     guardar_memoria(memoria)
 
 # -------------------------------------------------------------
+# SANDBOX AISLADA CON SUBPROCESS Y TIMEOUT
+# -------------------------------------------------------------
+
+def ejecutar_en_sandbox_subproceso(codigo_python: str, timeout_segundos: int = 5) -> tuple[bool, str]:
+    """
+    Ejecuta código Python en un subproceso totalmente separado con un archivo temporal.
+    Evita bloqueos de memoria y corta bucles infinitos mediante timeout.
+    """
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as tmp_file:
+        tmp_file.write(codigo_python)
+        tmp_file_path = tmp_file.name
+
+    try:
+        # Ejecuta en un proceso secundario aislado
+        resultado = subprocess.run(
+            [sys.executable, tmp_file_path],
+            capture_output=True,
+            text=True,
+            timeout=timeout_segundos
+        )
+        
+        os.remove(tmp_file_path)
+        
+        if resultado.returncode == 0:
+            salida = resultado.stdout.strip()
+            return True, salida if salida else "✅ Ejecutado exitosamente (Sin salida de texto)."
+        else:
+            return False, resultado.stderr.strip()
+
+    except subprocess.TimeoutExpired:
+        if os.path.exists(tmp_file_path):
+            os.remove(tmp_file_path)
+        return False, f"⏰ TIMEOUT: La ejecución excedió el límite de {timeout_segundos} segundos (Posible bucle infinito)."
+    except Exception as e:
+        if os.path.exists(tmp_file_path):
+            os.remove(tmp_file_path)
+        return False, f"❌ Error de la Sandbox: {str(e)}"
+
+# -------------------------------------------------------------
 # CONSULTAS GEMINI CON RAZONAMIENTO AMPLIADO
 # -------------------------------------------------------------
 
@@ -75,11 +112,11 @@ def consultar_gemini(prompt: str) -> str:
         conversacion_previa += f"\n[{msg['rol'].upper()}]: {msg['contenido']}\n"
 
     prompt_final = (
-        "Eres un Agente Programador Full-Stack Senior Autónomo Multi-Lenguaje.\n"
+        "Eres un Agente Programador Full-Stack Senior Autónomo.\n"
         f"REGLAS APRENDIDAS:\n{reglas}\n\n"
-        f"HISTORIAL DE CONVERSACIÓN:\n{conversacion_previa}\n\n"
-        "RAZONAMIENTO AMPLIADO: Analiza arquitectura, sintaxis y seguridad antes de responder.\n"
-        f"PETICIÓN DEL USUARIO:\n{prompt}"
+        f"HISTORIAL RECIENTE:\n{conversacion_previa}\n\n"
+        "RAZONAMIENTO AMPLIADO: Analiza la estructura, sintaxis y casos borde.\n"
+        f"PETICIÓN ACTUAL:\n{prompt}"
     )
 
     for modelo in [MODELO_PRINCIPAL, MODELO_RESPALDO]:
@@ -94,11 +131,14 @@ def consultar_gemini(prompt: str) -> str:
     raise HTTPException(status_code=503, detail="Servidores de IA saturados.")
 
 # -------------------------------------------------------------
-# ENDPOINTS REST Y AUTENTICACIÓN
+# ENDPOINTS REST DE AUTENTICACIÓN Y SANDBOX
 # -------------------------------------------------------------
 
 class PeticionChat(BaseModel):
     prompt: str
+
+class PeticionSandbox(BaseModel):
+    codigo: str
 
 @app.post("/token")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -111,31 +151,18 @@ def chat_endpoint(peticion: PeticionChat, token: str = Depends(oauth2_scheme)):
     respuesta = consultar_gemini(peticion.prompt)
     return {"respuesta": respuesta}
 
+@app.post("/api/sandbox")
+def sandbox_endpoint(peticion: PeticionSandbox, token: str = Depends(oauth2_scheme)):
+    exito, salida = ejecutar_en_sandbox_subproceso(peticion.codigo)
+    return {"exito": exito, "salida": salida}
+
 @app.get("/api/historial")
 def historial_endpoint(token: str = Depends(oauth2_scheme)):
     memoria = cargar_memoria()
     return {"historial": memoria.get("historial_conversacion", [])}
 
 # -------------------------------------------------------------
-# INTEGRACIONES OAUTH: GITHUB Y GOOGLE
-# -------------------------------------------------------------
-
-@app.get("/auth/github")
-def auth_github():
-    if not GITHUB_CLIENT_ID:
-        return {"error": "GITHUB_CLIENT_ID no configurado en el archivo .env"}
-    url = f"https://github.com/login/oauth/authorize?client_id={GITHUB_CLIENT_ID}&scope=repo,user"
-    return RedirectResponse(url)
-
-@app.get("/auth/google")
-def auth_google():
-    if not GOOGLE_CLIENT_ID:
-        return {"error": "GOOGLE_CLIENT_ID no configurado en el archivo .env"}
-    url = f"https://accounts.google.com/o/oauth2/v2/auth?client_id={GOOGLE_CLIENT_ID}&response_type=code&scope=openid%20email%20profile"
-    return RedirectResponse(url)
-
-# -------------------------------------------------------------
-# INTERFAZ WEB RESPONSIVA (FRONTEND CON VINCULACIÓN DE CUENTAS)
+# INTERFAZ WEB RESPONSIVA CON CONSOLA DE PRUEBAS EN VIVO
 # -------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
@@ -161,28 +188,20 @@ def interfaz_web():
             </div>
         </div>
 
-        <!-- PANTALLA CHAT -->
-        <div id="chat-screen" class="hidden flex-1 flex flex-col h-screen max-w-4xl mx-auto w-full p-2">
+        <!-- PANTALLA CHAT Y SANDBOX -->
+        <div id="chat-screen" class="hidden flex-1 flex flex-col h-screen max-w-5xl mx-auto w-full p-2">
             <header class="p-4 bg-gray-800 rounded-t-xl flex justify-between items-center border-b border-gray-700">
                 <div class="flex items-center gap-3">
                     <h2 class="font-bold text-lg text-purple-400">💬 Agente Autónomo</h2>
-                    <span class="text-xs bg-purple-900 text-purple-300 px-2 py-1 rounded">Multi-Lenguaje</span>
+                    <span class="text-xs bg-green-900 text-green-300 px-2 py-1 rounded">Sandbox Activa (Subprocess)</span>
                 </div>
-                <div class="flex gap-2">
-                    <button onclick="window.location.href='/auth/github'" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded border border-gray-600 flex items-center gap-1">
-                        🔗 GitHub
-                    </button>
-                    <button onclick="window.location.href='/auth/google'" class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded border border-gray-600 flex items-center gap-1">
-                        🌐 Google
-                    </button>
-                    <button onclick="logout()" class="text-xs bg-red-600 px-3 py-1 rounded font-bold">Salir</button>
-                </div>
+                <button onclick="logout()" class="text-xs bg-red-600 px-3 py-1 rounded font-bold">Salir</button>
             </header>
             
             <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-950 font-mono text-sm"></div>
             
             <div class="p-3 bg-gray-800 rounded-b-xl flex gap-2 border-t border-gray-700">
-                <input id="user-input" type="text" placeholder="Escribe tu consulta o tarea..." class="flex-1 p-3 bg-gray-700 rounded border border-gray-600 focus:outline-none focus:border-purple-500">
+                <input id="user-input" type="text" placeholder="Escribe tu consulta o pide un código para probar en Sandbox..." class="flex-1 p-3 bg-gray-700 rounded border border-gray-600 focus:outline-none focus:border-purple-500">
                 <button onclick="enviarMensaje()" class="bg-purple-600 px-6 rounded font-bold hover:bg-purple-700 transition">Enviar</button>
             </div>
         </div>

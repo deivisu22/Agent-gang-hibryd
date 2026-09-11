@@ -1,0 +1,8 @@
+INFO:     Will watch for changes in these directories: ['/workspaces/Agent-gang-hibryd']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [59226] using StatReload
+INFO:     Started server process [59240]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     156.255.150.179:0 - "GET / HTTP/1.1" 200 OK
+INFO:     156.255.150.179:0 - "GET /api/historial HTTP/1.1" 200 OK
