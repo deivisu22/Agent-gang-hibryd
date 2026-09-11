@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es" class="dark">
+<html lang="es" class="dark h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Aria Mirror AI Studio</title>
+    <title>Aria AI Studio</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/tokyo-night-dark.min.css">
@@ -19,125 +19,95 @@
                         geminiHover: '#282a2c',
                         geminiInput: '#1e1f20',
                         geminiUserBubble: '#282a2c',
-                        geminiText: '#e3e2e6',
-                        geminiMuted: '#c4c6d0'
+                        geminiText: '#e3e2e6'
                     }
                 }
             }
         }
     </script>
     <style>
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
-        ::-webkit-scrollbar-track { background: #131314; }
+        html, body { height: 100%; overflow: hidden; }
+        ::-webkit-scrollbar { width: 3px; height: 3px; }
         ::-webkit-scrollbar-thumb { background: #282a2c; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #374151; }
-        .markdown-body pre { background-color: #1e1f20 !important; border: 1px solid #282a2c; border-radius: 0.5rem; padding: 0.75rem; margin-top: 0.5rem; margin-bottom: 0.5rem; overflow-x: auto; }
-        .markdown-body ul { list-style-type: disc; padding-left: 1.25rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
-        .markdown-body ol { list-style-type: decimal; padding-left: 1.25rem; margin-top: 0.5rem; margin-bottom: 0.5rem; }
-        .markdown-body p { margin-bottom: 0.75rem; line-height: 1.6; }
+        .markdown-body pre { background-color: #1e1f20 !important; border: 1px solid #282a2c; border-radius: 0.5rem; padding: 0.75rem; margin: 0.5rem 0; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+        .markdown-body p { margin-bottom: 0.5rem; line-height: 1.5; word-break: break-word; }
+        .markdown-body code { word-break: break-word; }
     </style>
 </head>
-<body class="bg-geminiBg text-geminiText min-h-screen flex font-sans antialiased overflow-hidden relative">
+<body class="bg-geminiBg text-geminiText h-full flex flex-col font-sans antialiased">
 
-    <!-- OVERLAY PARA MÓVIL AL ABRIR SIDEBAR -->
-    <div id="sidebar-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/60 z-30 hidden md:hidden transition-opacity"></div>
+    <!-- OVERLAY MÓVIL -->
+    <div id="sidebar-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/70 z-30 hidden md:hidden"></div>
 
-    <!-- SIDEBAR RESPONSIVO -->
-    <aside id="sidebar" class="fixed md:static inset-y-0 left-0 z-40 w-72 md:w-64 bg-geminiSidebar border-r border-gray-800/80 flex flex-col h-full shrink-0 text-sm transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out">
-        
-        <!-- Header Sidebar -->
-        <div class="p-4 flex items-center justify-between">
-            <div class="flex items-center gap-2 font-semibold text-base text-gray-100">
-                <span class="text-xl bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent font-bold">✦ Aria Studio</span>
+    <div class="flex h-full w-full overflow-hidden">
+        <!-- SIDEBAR -->
+        <aside id="sidebar" class="fixed md:static inset-y-0 left-0 z-40 w-72 md:w-64 bg-geminiSidebar border-r border-gray-800 flex flex-col h-full shrink-0 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out">
+            <div class="p-4 flex items-center justify-between border-b border-gray-800">
+                <span class="text-lg font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">✦ Aria Studio</span>
+                <button onclick="toggleSidebar()" class="md:hidden text-gray-400 hover:text-white text-xl">✕</button>
             </div>
-            <!-- Botón cerrar en móvil -->
-            <button onclick="toggleSidebar()" class="md:hidden text-gray-400 hover:text-white p-1 rounded-md hover:bg-geminiHover">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
-        </div>
-
-        <!-- Acciones Principales -->
-        <div class="px-3 space-y-1">
-            <button onclick="nuevaSesion()" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-full hover:bg-geminiHover text-left text-xs font-medium text-gray-200 transition">
-                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                <span>Nueva conversación</span>
-            </button>
-        </div>
-
-        <div class="px-4 pt-4 pb-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Workspace / Archivos</div>
-        <div id="file-tree" class="px-3 overflow-y-auto space-y-0.5 text-xs text-geminiMuted font-mono flex-1"></div>
-
-        <!-- Perfil Footer -->
-        <div class="p-3 border-t border-gray-800/80 flex items-center justify-between text-xs mt-auto">
-            <div class="flex items-center gap-2 truncate">
-                <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center font-bold text-white shadow">D</div>
-                <div class="truncate">
-                    <div class="font-medium text-gray-200">Deivis Urdaneta</div>
-                    <div class="text-[10px] text-emerald-400 font-mono">Full-Stack Agent</div>
-                </div>
-            </div>
-        </div>
-    </aside>
-
-    <!-- ÁREA PRINCIPAL -->
-    <main class="flex-1 flex flex-col h-screen max-w-full overflow-hidden relative w-full">
-        
-        <!-- Header Superior -->
-        <header class="h-14 px-4 md:px-6 flex items-center justify-between border-b border-gray-800/50 text-xs text-gray-400 bg-geminiBg/80 backdrop-blur z-20">
-            <div class="flex items-center gap-3">
-                <!-- Botón hamburguesa para móvil -->
-                <button onclick="toggleSidebar()" class="md:hidden text-gray-300 hover:text-white p-1.5 rounded-lg bg-geminiSidebar border border-gray-800">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+            
+            <div class="p-3">
+                <button onclick="nuevaSesion()" class="w-full flex items-center gap-2 px-3 py-2 bg-geminiHover hover:bg-gray-700 rounded-full text-xs font-medium text-gray-200 transition">
+                    <span>+</span> Nueva conversación
                 </button>
-                <div class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    <span class="text-gray-200 font-medium text-sm md:text-xs">Aria AI v6.0</span>
+            </div>
+
+            <div class="px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase">Archivos Workspace</div>
+            <div id="file-tree" class="px-3 overflow-y-auto space-y-1 text-xs text-gray-400 font-mono flex-1"></div>
+
+            <div class="p-3 border-t border-gray-800 text-xs text-gray-400">
+                <div class="font-bold text-gray-200">Deivis Urdaneta</div>
+                <div class="text-[10px] text-emerald-400">Aria AI v6.0 Active</div>
+            </div>
+        </aside>
+
+        <!-- ÁREA PRINCIPAL -->
+        <main class="flex-1 flex flex-col h-full w-full min-w-0 bg-geminiBg overflow-hidden">
+            <!-- HEADER FIJO -->
+            <header class="h-12 px-4 flex items-center justify-between border-b border-gray-800/80 bg-geminiBg shrink-0">
+                <div class="flex items-center gap-3">
+                    <button onclick="toggleSidebar()" class="md:hidden text-gray-300 bg-geminiSidebar p-1.5 rounded-lg border border-gray-800">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                    </button>
+                    <span class="text-xs font-semibold text-gray-200">Aria AI Studio</span>
+                </div>
+                <span id="sys-stats" class="text-[10px] font-mono text-gray-500">CPU: -- | RAM: --</span>
+            </header>
+
+            <!-- CONTENEDOR DE MENSAJES SCROLLABLE -->
+            <div id="messages" class="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 w-full max-w-4xl mx-auto"></div>
+
+            <!-- INDICADOR CARGANDO -->
+            <div id="loading" class="hidden px-4 py-1 text-xs text-purple-400 max-w-4xl mx-auto w-full">
+                <span class="animate-spin">✦</span> Procesando...
+            </div>
+
+            <!-- VISTA PREVIA IMAGEN -->
+            <div id="image-preview-container" class="hidden px-4 mb-2 max-w-4xl mx-auto w-full">
+                <div class="relative inline-block">
+                    <img id="image-preview" class="h-16 w-auto rounded-lg border border-purple-500 object-cover" src="" alt="Preview">
+                    <button onclick="removerImagen()" class="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">✕</button>
                 </div>
             </div>
 
-            <div class="hidden sm:flex items-center gap-3">
-                <span id="sys-stats" class="text-[11px] font-mono text-gray-400">CPU: -- | RAM: --</span>
-            </div>
-        </header>
-
-        <!-- Contenedor de Mensajes -->
-        <div id="messages" class="flex-1 overflow-y-auto px-3 sm:px-6 md:px-12 py-4 sm:py-6 space-y-6 max-w-4xl mx-auto w-full text-sm"></div>
-
-        <!-- Indicador de carga -->
-        <div id="loading" class="hidden max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-12 py-2">
-            <div class="flex items-center gap-2 text-xs text-purple-400 font-medium">
-                <span class="animate-spin text-base">✦</span>
-                <span>Aria está procesando...</span>
-            </div>
-        </div>
-
-        <!-- Vista previa de imagen adjunta -->
-        <div id="image-preview-container" class="hidden max-w-4xl mx-auto w-full px-4 sm:px-6 md:px-12 mb-2">
-            <div class="relative inline-block">
-                <img id="image-preview" class="h-20 w-auto rounded-xl border border-purple-500/80 object-cover shadow-lg" src="" alt="Vista previa">
-                <button onclick="removerImagen()" class="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-md">×</button>
-            </div>
-        </div>
-
-        <!-- Input Barra Flotante Adaptada a Pantallas Pequeñas -->
-        <div class="p-2 sm:p-4 md:px-12 bg-geminiBg border-t border-gray-800/40">
-            <div class="max-w-4xl mx-auto space-y-2">
-                <div class="bg-geminiInput rounded-2xl sm:rounded-3xl border border-gray-800/90 p-2 sm:p-3 shadow-2xl focus-within:border-purple-500/50 transition flex items-center gap-2">
-                    
+            <!-- INPUT FIJO EN PARTE INFERIOR (STICKY BOTTOM) -->
+            <div class="p-2 sm:p-4 bg-geminiBg border-t border-gray-800 shrink-0 w-full">
+                <div class="max-w-4xl mx-auto flex items-center gap-2 bg-geminiInput border border-gray-800 rounded-2xl p-2 shadow-lg">
                     <input type="file" id="image-input" accept="image/*" class="hidden" onchange="cargarVistaPreviaImagen(event)">
-                    <button type="button" onclick="document.getElementById('image-input').click()" class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-geminiHover transition shrink-0" title="Adjuntar Imagen">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    <button type="button" onclick="document.getElementById('image-input').click()" class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-geminiHover shrink-0">
+                        📷
                     </button>
 
-                    <input id="user-input" type="text" placeholder="Escribe a Aria o adjunta imagen..." class="flex-1 bg-transparent text-sm text-gray-100 placeholder-gray-500 focus:outline-none min-w-0 px-1">
+                    <input id="user-input" type="text" placeholder="Escribe tu mensaje..." class="flex-1 bg-transparent text-sm text-gray-100 focus:outline-none min-w-0">
 
-                    <button type="button" onclick="enviarMensaje()" class="bg-purple-600 hover:bg-purple-700 text-white p-2 sm:px-4 sm:py-2 rounded-xl sm:rounded-full transition flex items-center justify-center shrink-0">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                    <button type="button" onclick="enviarMensaje()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shrink-0">
+                        Enviar
                     </button>
                 </div>
             </div>
-        </div>
-    </main>
+        </main>
+    </div>
 
     <script>
         let imagenBase64 = null;
@@ -146,7 +116,6 @@
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebar-overlay');
             const isHidden = sidebar.classList.contains('-translate-x-full');
-            
             if (isHidden) {
                 sidebar.classList.remove('-translate-x-full');
                 overlay.classList.remove('hidden');
@@ -208,9 +177,7 @@
                         const d = document.createElement('div');
                         d.className = 'truncate hover:text-white cursor-pointer py-1 px-2 rounded hover:bg-geminiHover';
                         d.innerText = '📄 ' + f;
-                        d.onclick = () => {
-                            if (window.innerWidth < 768) toggleSidebar();
-                        };
+                        d.onclick = () => { if (window.innerWidth < 768) toggleSidebar(); };
                         container.appendChild(d);
                     });
                 }
@@ -254,6 +221,12 @@
             }
         }
 
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, 
+                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+            );
+        }
+
         function agregarBubble(rol, texto) {
             const container = document.getElementById('messages');
             const isUser = rol === 'usuario';
@@ -264,16 +237,16 @@
             let innerHtml = '';
             if (isUser) {
                 innerHtml = `
-                    <div class="bg-geminiUserBubble text-gray-100 px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl sm:rounded-3xl max-w-[88%] sm:max-w-[80%] text-sm shadow">
-                        ${marked.parse(texto)}
+                    <div class="bg-geminiUserBubble text-gray-100 px-4 py-2 rounded-2xl max-w-[85%] text-sm">
+                        ${escapeHTML(texto)}
                     </div>
                 `;
             } else {
                 const parsedMarkdown = marked.parse(texto);
                 innerHtml = `
-                    <div class="flex gap-2.5 sm:gap-4 max-w-[100%] w-full">
-                        <div class="text-base sm:text-lg text-purple-400 shrink-0 select-none">✦</div>
-                        <div class="text-gray-200 text-sm space-y-3 overflow-x-auto markdown-body flex-1 min-w-0">
+                    <div class="flex gap-2 max-w-[100%] w-full">
+                        <div class="text-purple-400 font-bold shrink-0">✦</div>
+                        <div class="text-gray-200 text-sm markdown-body flex-1 min-w-0 overflow-hidden">
                             ${parsedMarkdown}
                         </div>
                     </div>
