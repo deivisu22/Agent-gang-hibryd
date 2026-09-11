@@ -12,33 +12,6 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-def obtener_keys():
-    KEYS_RAW = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
-    return [k.strip() for k in KEYS_RAW.split(",") if k.strip()]
-
-KEY_INDEX = 0
-
-def configurar_gemini():
-    global KEY_INDEX
-    keys = obtener_keys()
-    if not keys:
-        raise HTTPException(
-            status_code=503, 
-            detail="Falta la variable GEMINI_API_KEYS en Vercel."
-        )
-    key_actual = keys[KEY_INDEX % len(keys)]
-    genai.configure(api_key=key_actual)
-
-def rotar_api_key():
-    global KEY_INDEX
-    keys = obtener_keys()
-    if keys:
-        KEY_INDEX = (KEY_INDEX + 1) % len(keys)
-
-MODELO_PRINCIPAL = "gemini-2.5-flash"
-MODELO_RESPALDO = "gemini-2.0-flash"
-ARCHIVO_MEMORIA = "/tmp/memoria.json"
-
 app = FastAPI(title="Aria Mirror AI Studio")
 
 app.add_middleware(
@@ -48,6 +21,35 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+KEY_INDEX = 0
+
+def obtener_keys() -> list[str]:
+    """Obtiene dinámicamente las API Keys en cada ejecución de la petición."""
+    raw = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
+    return [k.strip() for k in raw.split(",") if k.strip()]
+
+def configurar_gemini() -> str:
+    global KEY_INDEX
+    keys = obtener_keys()
+    if not keys:
+        raise HTTPException(
+            status_code=503, 
+            detail="Falta la variable GEMINI_API_KEYS en las Environment Variables de Vercel."
+        )
+    key_actual = keys[KEY_INDEX % len(keys)]
+    genai.configure(api_key=key_actual)
+    return key_actual
+
+def rotar_api_key():
+    global KEY_INDEX
+    keys = obtener_keys()
+    if keys:
+        KEY_INDEX = (KEY_INDEX + 1) % len(keys)
+
+# Modelos universales soportados por google.generativeai
+MODELOS_DISPONIBLES = ["gemini-1.5-flash", "gemini-1.5-pro"]
+ARCHIVO_MEMORIA = "/tmp/memoria.json"
 
 def cargar_memoria() -> dict:
     if os.path.exists(ARCHIVO_MEMORIA):
@@ -91,7 +93,12 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
     if any(p in prompt.lower() for p in palabras_graficas) and not imagen_b64:
         return generar_imagen_arte(prompt)
 
-    configurar_gemini()
+    keys = obtener_keys()
+    if not keys:
+        raise HTTPException(
+            status_code=503, 
+            detail="Error 503: No se detectó ninguna GEMINI_API_KEYS en las variables de entorno de Vercel."
+        )
 
     memoria = cargar_memoria()
     conversacion_previa = ""
@@ -115,25 +122,24 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
     contents.append(prompt_final)
 
     ultimo_error = ""
-    keys = obtener_keys()
-    intentos = max(len(keys) * 2, 2)
+    intentos_totales = max(len(keys) * 2, 2)
 
-    for _ in range(intentos):
+    for _ in range(intentos_totales):
         configurar_gemini()
-        for mod in [MODELO_PRINCIPAL, MODELO_RESPALDO]:
+        for mod in MODELOS_DISPONIBLES:
             try:
                 model = genai.GenerativeModel(mod)
                 response = model.generate_content(contents)
-                if response.text:
+                if response and hasattr(response, 'text') and response.text:
                     guardar_mensaje_historial("usuario", prompt)
                     guardar_mensaje_historial("agente", response.text)
                     return response.text
             except Exception as e:
                 ultimo_error = str(e)
                 rotar_api_key()
-                time.sleep(0.3)
+                time.sleep(0.2)
 
-    raise HTTPException(status_code=503, detail=f"Error al conectar con Gemini API: {ultimo_error}")
+    raise HTTPException(status_code=503, detail=f"Fallaron las llamadas a Gemini API. Detalle: {ultimo_error}")
 
 class PeticionChat(BaseModel):
     prompt: str
