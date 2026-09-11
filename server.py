@@ -7,8 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from google import genai
-from google.genai import types
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -29,7 +28,7 @@ def obtener_keys() -> list[str]:
     raw = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
     return [k.strip() for k in raw.split(",") if k.strip()]
 
-def obtener_cliente() -> tuple[genai.Client, str]:
+def configurar_gemini() -> str:
     global KEY_INDEX
     keys = obtener_keys()
     if not keys:
@@ -38,8 +37,8 @@ def obtener_cliente() -> tuple[genai.Client, str]:
             detail="Falta la variable GEMINI_API_KEYS en Vercel."
         )
     key_actual = keys[KEY_INDEX % len(keys)]
-    client = genai.Client(api_key=key_actual)
-    return client, key_actual
+    genai.configure(api_key=key_actual)
+    return key_actual
 
 def rotar_api_key():
     global KEY_INDEX
@@ -47,8 +46,6 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-# Modelo oficial y compatible con google-genai
-MODELO_OFICIAL = "gemini-1.5-flash"
 ARCHIVO_MEMORIA = "/tmp/memoria.json"
 
 def cargar_memoria() -> dict:
@@ -116,7 +113,7 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         header, encoded = imagen_b64.split(",", 1)
         mime_type = header.split(";")[0].split(":")[1]
         data_bytes = base64.b64decode(encoded)
-        contents.append(types.Part.from_bytes(data=data_bytes, mime_type=mime_type))
+        contents.append({"mime_type": mime_type, "data": data_bytes})
 
     prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {prompt if prompt else 'Analiza la imagen.'}"
     contents.append(prompt_final)
@@ -124,20 +121,20 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
     errores_acumulados = []
 
     for k_idx in range(len(keys)):
-        client, key_usada = obtener_cliente()
-        try:
-            response = client.models.generate_content(
-                model=MODELO_OFICIAL,
-                contents=contents
-            )
-            if response and hasattr(response, 'text') and response.text:
-                guardar_mensaje_historial("usuario", prompt)
-                guardar_mensaje_historial("agente", response.text)
-                return response.text
-        except Exception as e:
-            err_msg = f"KeyIdx {k_idx} -> {str(e)}"
-            errores_acumulados.append(err_msg)
-            rotar_api_key()
+        configurar_gemini()
+        # Nombres exactos aceptados por la REST API v1beta de google-generativeai
+        for mod in ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]:
+            try:
+                model = genai.GenerativeModel(mod)
+                response = model.generate_content(contents)
+                if response and hasattr(response, 'text') and response.text:
+                    guardar_mensaje_historial("usuario", prompt)
+                    guardar_mensaje_historial("agente", response.text)
+                    return response.text
+            except Exception as e:
+                err_msg = f"KeyIdx {k_idx} | Mod {mod} -> {str(e)}"
+                errores_acumulados.append(err_msg)
+                rotar_api_key()
 
     detalle_final = " || ".join(errores_acumulados)
     raise HTTPException(status_code=500, detail=f"FALLO DE CONEXION A GEMINI. Detalles: {detalle_final}")
