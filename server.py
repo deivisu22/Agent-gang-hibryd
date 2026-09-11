@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-app = FastAPI(title="Aria Studio - Multi-Function Core")
+app = FastAPI(title="Aria Studio - Enterprise Multi-Agent Suite")
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,7 +32,7 @@ def obtener_key_actual() -> str:
     global KEY_INDEX
     keys = obtener_keys()
     if not keys:
-        raise HTTPException(status_code=500, detail="Falta la variable GEMINI_API_KEYS en Vercel.")
+        raise HTTPException(status_code=500, detail="Falta GEMINI_API_KEYS en Vercel.")
     return keys[KEY_INDEX % len(keys)]
 
 def rotar_api_key():
@@ -41,7 +41,6 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-# PERSISTENCIA HÍBRIDA (UPSTASH REDIS REST + FALLBACK LOCAL)
 UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL", "").rstrip("/")
 UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
 ARCHIVO_MEMORIA = "/tmp/aria_chats.json"
@@ -104,7 +103,6 @@ def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str 
             "creado": time.strftime("%Y-%m-%d %H:%M:%S"),
             "mensajes": []
         }
-    
     if len(sesiones[chat_id]["mensajes"]) == 0 and rol == "usuario":
         sesiones[chat_id]["titulo"] = (contenido[:30] + "...") if len(contenido) > 30 else contenido
 
@@ -116,14 +114,39 @@ def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str 
     sesiones[chat_id]["mensajes"] = sesiones[chat_id]["mensajes"][-30:]
     guardar_todas_sesiones(sesiones)
 
-def generar_imagen_arte(prompt: str) -> str:
-    prompt_encoded = prompt.replace(" ", "%20")
-    url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
-    return (
-        f"🎨 **Generación Visual Solicitada:**\n\n"
-        f"![Imagen Generada]({url_imagen})\n\n"
-        f"🔗 [Descargar Render HD]({url_imagen})"
+# BÚSQUEDA WEB TOOL
+def realizar_busqueda_web(query: str) -> str:
+    try:
+        url = f"https://html.duckduckgo.com/html/?q={requests.utils.quote(query)}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200 and "result__snippet" in res.text:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(res.text, "html.parser")
+            snippets = [s.get_text() for s in soup.find_all("a", class_="result__snippet")[:3]]
+            return "\n".join(snippets)
+    except Exception:
+        pass
+    return "No se obtuvieron resultados adicionales de búsqueda web."
+
+ROLES_PROMPTS = {
+    "dev": (
+        "Eres Aria AI en modo FULL STACK DEVELOPER.\n"
+        "Especialista en Python, JavaScript, FastAPI, SQL y arquitecturas Serverless.\n"
+        "Proporciona código limpio, optimizado y libre de bugs."
+    ),
+    "accounting": (
+        "Eres Aria AI en modo ANALISTA CONTABLE Y FISCAL EXPERTO EN VENEZUELA.\n"
+        "Tienes dominio completo de normativas SENIAT, IGTF, IVA, ISLR y los siguientes sistemas contables:\n"
+        "- SAP\n- PROFIT PLUS\n- ABC-SOFT\n- INFO AUTO\n- ODOO\n"
+        "Proporciona análisis estructurados, tablas comparativas y asientos contables precisos."
+    ),
+    "english": (
+        "You are Aria AI in ENGLISH TUTOR Mode.\n"
+        "Help the user learn English dynamically. Correct grammar, expand vocabulary, "
+        "and provide responses in English with concise Spanish explanations when needed."
     )
+}
 
 class ArchivoAdjunto(BaseModel):
     nombre: str
@@ -133,99 +156,79 @@ class ArchivoAdjunto(BaseModel):
 class PeticionChat(BaseModel):
     chat_id: str
     prompt: str
+    modo_rol: Optional[str] = "dev"
+    web_search: Optional[bool] = False
     archivos: Optional[List[ArchivoAdjunto]] = None
 
 @app.post("/api/chat")
 def chat_endpoint(peticion: PeticionChat):
-    palabras_graficas = ["crea una imagen", "genera una imagen", "haz un dibujo", "dibuja", "renderiza", "diseña un logo"]
-    if any(p in peticion.prompt.lower() for p in palabras_graficas) and not peticion.archivos:
-        resp_visual = generar_imagen_arte(peticion.prompt)
-        guardar_mensaje_en_chat(peticion.chat_id, "usuario", peticion.prompt)
-        guardar_mensaje_en_chat(peticion.chat_id, "agente", resp_visual)
-        return {"respuesta": resp_visual}
-
     keys = obtener_keys()
     if not keys:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEYS no configurada.")
 
     historial = obtener_historial_chat(peticion.chat_id)
     conversacion_previa = ""
-    for msg in historial[-10:]:
+    for msg in historial[-8:]:
         conversacion_previa += f"\n[{msg['rol'].upper()}]: {msg['contenido']}\n"
 
-    system_instruction = (
-        "Eres Aria AI, mi asistente personal, desarrollador full stack y tutor de desarrollo.\n"
-        "Responde de forma técnica, dinámica, directa y formateada en Markdown impecable.\n"
-        f"CONTEXTO DE ESTE CHAT:\n{conversacion_previa}"
-    )
+    role_instruction = ROLES_PROMPTS.get(peticion.modo_rol, ROLES_PROMPTS["dev"])
+    
+    web_context = ""
+    if peticion.web_search:
+        resultados_web = realizar_busqueda_web(peticion.prompt)
+        web_context = f"\n\nINFORMACIÓN EN TIEMPO REAL BÚSQUEDA WEB:\n{resultados_web}\n"
+
+    system_instruction = f"{role_instruction}\n{web_context}\nHISTORIAL DE CHAT:\n{conversacion_previa}"
 
     parts = []
-    
     if peticion.archivos:
         for arch in peticion.archivos:
-            if "text" in arch.mime_type or "json" in arch.mime_type or "py" in arch.nombre or "csv" in arch.nombre:
+            if "text" in arch.mime_type or "json" in arch.mime_type or any(arch.nombre.endswith(ext) for ext in [".py", ".csv", ".sql", ".js", ".html", ".css", ".txt"]):
                 try:
                     decoded_text = base64.b64decode(arch.contenido_b64.split(",")[-1]).decode("utf-8", errors="ignore")
-                    parts.append({"text": f"--- ARCHIVO ADJUNTO: {arch.nombre} ---\n{decoded_text}\n--- FIN ARCHIVO ---"})
+                    parts.append({"text": f"--- ARCHIVO/CÓDIGO: {arch.nombre} ---\n{decoded_text}\n--- FIN ARCHIVO ---"})
                 except Exception:
                     pass
             else:
                 encoded = arch.contenido_b64.split(",")[-1]
-                parts.append({
-                    "inline_data": {
-                        "mime_type": arch.mime_type,
-                        "data": encoded
-                    }
-                })
+                parts.append({"inline_data": {"mime_type": arch.mime_type, "data": encoded}})
 
-    prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {peticion.prompt if peticion.prompt else 'Analiza los archivos adjuntos.'}"
+    prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {peticion.prompt if peticion.prompt else 'Analiza los componentes.'}"
     parts.append({"text": prompt_final})
 
     payload = {"contents": [{"parts": parts}]}
-    modelos_confirmados = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"]
-    errores_acumulados = []
+    modelos = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"]
+    errores = []
 
     for k_idx in range(len(keys)):
         api_key = obtener_key_actual()
-        for mod in modelos_confirmados:
+        for mod in modelos:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={api_key}"
             try:
                 res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=12)
                 data = res.json()
-                
                 if res.status_code == 200 and "candidates" in data:
                     texto_resp = data["candidates"][0]["content"]["parts"][0]["text"]
                     guardar_mensaje_en_chat(peticion.chat_id, "usuario", peticion.prompt)
                     guardar_mensaje_en_chat(peticion.chat_id, "agente", texto_resp)
                     return {"respuesta": texto_resp}
                 else:
-                    err_txt = data.get("error", {}).get("message", res.text[:120])
-                    errores_acumulados.append(f"Mod {mod} -> {res.status_code}: {err_txt}")
+                    errores.append(f"Mod {mod} -> {res.status_code}: {data.get('error', {}).get('message', res.text[:100])}")
             except Exception as e:
-                errores_acumulados.append(f"Mod {mod} -> Ex: {str(e)}")
-            
+                errores.append(f"Mod {mod} -> Ex: {str(e)}")
             rotar_api_key()
 
-    raise HTTPException(status_code=500, detail=f"FALLO CORE ARIA: {' || '.join(errores_acumulados)}")
+    raise HTTPException(status_code=500, detail=f"FALLO ARIA SUITE: {' || '.join(errores)}")
 
 @app.get("/api/chats")
 def listar_chats():
     sesiones = cargar_todas_sesiones()
-    lista = []
-    for cid, data in sesiones.items():
-        lista.append({
-            "chat_id": cid,
-            "titulo": data.get("titulo", "Conversación"),
-            "creado": data.get("creado", "")
-        })
-    return {"chats": lista}
+    return {"chats": [{"chat_id": k, "titulo": v.get("titulo", "Conversación"), "creado": v.get("creado", "")} for k, v in sesiones.items()]}
 
 @app.get("/api/chats/{chat_id}")
 def obtener_chat(chat_id: str):
     sesiones = cargar_todas_sesiones()
-    if chat_id in sesiones:
-        return sesiones[chat_id]
-    return {"titulo": "Nuevo Chat", "mensajes": []}
+    return sesiones.get(chat_id, {"titulo": "Nuevo Chat", "mensajes": []})
 
 @app.delete("/api/chats/{chat_id}")
 def borrar_chat(chat_id: str):
@@ -234,14 +237,6 @@ def borrar_chat(chat_id: str):
         del sesiones[chat_id]
         guardar_todas_sesiones(sesiones)
     return {"status": "ok"}
-
-@app.get("/api/files/tree")
-def tree_endpoint():
-    return {"arbol": ["server.py", "index.html", "requirements.txt", "vercel.json"]}
-
-@app.get("/api/system/stats")
-def stats_endpoint():
-    return {"metricas": {"cpu_uso": "Vercel Serverless", "ram_uso": "Auto-scaled", "disco_libre_gb": "Cloud"}}
 
 @app.get("/")
 def interfaz_web():

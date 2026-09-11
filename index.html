@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aria Studio AI - Multi-Agent Suite</title>
+    <title>Aria Studio AI - Multi-Agent Enterprise Suite</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
@@ -15,16 +15,10 @@
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
         pre { position: relative; padding-top: 2.5rem !important; }
         .copy-btn {
-            position: absolute;
-            top: 0.5rem;
-            right: 0.5rem;
-            background: rgba(51, 65, 85, 0.8);
-            color: #cbd5e1;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.375rem;
-            font-size: 0.75rem;
-            cursor: pointer;
-            transition: all 0.2s;
+            position: absolute; top: 0.5rem; right: 0.5rem;
+            background: rgba(51, 65, 85, 0.8); color: #cbd5e1;
+            padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-size: 0.75rem;
+            cursor: pointer; transition: all 0.2s;
         }
         .copy-btn:hover { background: #6366f1; color: white; }
     </style>
@@ -44,48 +38,82 @@
                 </button>
             </div>
 
+            <!-- SELECTOR DE ROL -->
+            <div class="mb-4">
+                <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Modo / Rol</label>
+                <select id="select-rol" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-purple-300 font-medium outline-none">
+                    <option value="dev">💻 Full-Stack Developer</option>
+                    <option value="accounting">📊 Contable/Fiscal (VE)</option>
+                    <option value="english">🇬🇧 English Tutor</option>
+                </select>
+            </div>
+
             <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Conversaciones</div>
-            <div id="lista-chats" class="space-y-1 overflow-y-auto max-h-[calc(100vh-220px)]"></div>
+            <div id="lista-chats" class="space-y-1 overflow-y-auto max-h-[calc(100vh-280px)]"></div>
         </div>
 
         <div class="border-t border-slate-800 pt-4 text-xs text-slate-400 flex items-center justify-between">
-            <span class="flex items-center gap-2"><i class="fa-solid fa-server text-emerald-400"></i> Vercel Serverless</span>
+            <span class="flex items-center gap-2"><i class="fa-solid fa-server text-emerald-400"></i> Serverless Active</span>
             <button onclick="exportarChat()" title="Exportar Chat" class="hover:text-slate-200"><i class="fa-solid fa-download"></i></button>
         </div>
     </aside>
 
-    <!-- PANEL PRINCIPAL -->
-    <main class="flex-1 flex flex-col h-full relative bg-slate-950">
-        <header class="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50 backdrop-blur-sm">
-            <h1 id="titulo-chat-actual" class="font-semibold text-slate-200">Nueva conversación</h1>
-            <div class="text-xs bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full border border-emerald-500/20 flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Aria Core Active
-            </div>
-        </header>
-
-        <section id="chat-box" class="flex-1 overflow-y-auto p-6 space-y-6"></section>
-
-        <footer class="p-4 border-t border-slate-800 bg-slate-900/40">
-            <div class="max-w-4xl mx-auto flex flex-col gap-2">
-                <div id="preview-adjuntos" class="flex flex-wrap gap-2 hidden"></div>
-
-                <div class="flex items-center gap-2 bg-slate-900 border border-slate-700/60 rounded-xl p-2 focus-within:border-purple-500 transition">
-                    <label class="p-2 text-slate-400 hover:text-purple-400 cursor-pointer transition" title="Adjuntar archivos">
-                        <i class="fa-solid fa-paperclip text-lg"></i>
-                        <input type="file" id="input-archivo" multiple class="hidden" onchange="manejarArchivos(event)">
+    <!-- PANEL PRINCIPAL & SPLIT SCREEN -->
+    <main class="flex-1 flex h-full relative bg-slate-950 overflow-hidden">
+        
+        <!-- ÁREA DE CHAT -->
+        <div class="flex-1 flex flex-col h-full border-r border-slate-800">
+            <header class="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50">
+                <h1 id="titulo-chat-actual" class="font-semibold text-slate-200">Nueva conversación</h1>
+                
+                <div class="flex items-center gap-4">
+                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" id="check-web" class="accent-purple-500 rounded">
+                        <span><i class="fa-solid fa-globe text-indigo-400"></i> Búsqueda Web</span>
                     </label>
-
-                    <textarea id="prompt-input" rows="1" placeholder="Escribe tu mensaje o pide análisis de código..." 
-                        class="flex-1 bg-transparent text-slate-100 border-none outline-none resize-none px-2 text-sm"
-                        onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); enviarMensaje(); }"></textarea>
-
-                    <button onclick="enviarMensaje()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg transition text-sm font-medium flex items-center gap-2">
-                        <span>Enviar</span>
-                        <i class="fa-solid fa-paper-plane"></i>
+                    <button onclick="toggleSplitScreen()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center gap-2">
+                        <i class="fa-solid fa-columns"></i> Code Editor
                     </button>
                 </div>
+            </header>
+
+            <section id="chat-box" class="flex-1 overflow-y-auto p-6 space-y-6"></section>
+
+            <footer class="p-4 border-t border-slate-800 bg-slate-900/40">
+                <div class="max-w-4xl mx-auto flex flex-col gap-2">
+                    <div id="preview-adjuntos" class="flex flex-wrap gap-2 hidden"></div>
+
+                    <div class="flex items-center gap-2 bg-slate-900 border border-slate-700/60 rounded-xl p-2 focus-within:border-purple-500 transition">
+                        <label class="p-2 text-slate-400 hover:text-purple-400 cursor-pointer transition" title="Adjuntar archivos">
+                            <i class="fa-solid fa-paperclip text-lg"></i>
+                            <input type="file" id="input-archivo" multiple class="hidden" onchange="manejarArchivos(event)">
+                        </label>
+
+                        <textarea id="prompt-input" rows="1" placeholder="Escribe tu mensaje o consulta contable/desarrollo..." 
+                            class="flex-1 bg-transparent text-slate-100 border-none outline-none resize-none px-2 text-sm"
+                            onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); enviarMensaje(); }"></textarea>
+
+                        <button onclick="enviarMensaje()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg transition text-sm font-medium flex items-center gap-2">
+                            <span>Enviar</span>
+                            <i class="fa-solid fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </div>
+            </footer>
+        </div>
+
+        <!-- PANEL SPLIT SCREEN (CODE EDITOR) -->
+        <div id="editor-panel" class="w-1/2 h-full bg-slate-900 border-l border-slate-800 flex flex-col hidden">
+            <div class="h-14 border-b border-slate-800 flex items-center justify-between px-4 bg-slate-950">
+                <span class="text-xs font-semibold text-slate-300 flex items-center gap-2"><i class="fa-solid fa-code text-purple-400"></i> Editor de Código / Archivos</span>
+                <button onclick="toggleSplitScreen()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
             </div>
-        </footer>
+            <textarea id="code-editor-text" class="flex-1 bg-slate-950 text-slate-200 font-mono text-xs p-4 border-none outline-none resize-none" placeholder="// Pega tu código Python, SQL, JSON o datos contables aquí para enviarlo a Aria..."></textarea>
+            <div class="p-3 border-t border-slate-800 bg-slate-900 flex justify-end">
+                <button onclick="enviarDesdeEditor()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium">Inyectar Código al Chat</button>
+            </div>
+        </div>
+
     </main>
 
     <script>
@@ -103,11 +131,7 @@
                 const data = await res.json();
                 const cont = document.getElementById("lista-chats");
                 cont.innerHTML = "";
-
-                if (!data.chats || data.chats.length === 0) {
-                    nuevoChat();
-                    return;
-                }
+                if (!data.chats || data.chats.length === 0) { nuevoChat(); return; }
 
                 data.chats.reverse().forEach(c => {
                     const active = c.chat_id === chatActualId;
@@ -135,7 +159,7 @@
             document.getElementById("chat-box").innerHTML = `
                 <div class="text-center text-slate-500 mt-20">
                     <i class="fa-solid fa-wand-magic-sparkles text-4xl mb-4 text-purple-500"></i>
-                    <p class="font-medium text-slate-300">Aria Studio listo para colaborar.</p>
+                    <p class="font-medium text-slate-300">Aria Enterprise Suite lista.</p>
                 </div>
             `;
             document.getElementById("titulo-chat-actual").innerText = "Nueva conversación";
@@ -147,11 +171,9 @@
                 const res = await fetch(`/api/chats/${chatActualId}`);
                 const data = await res.json();
                 document.getElementById("titulo-chat-actual").innerText = data.titulo || "Conversación";
-
                 const chatBox = document.getElementById("chat-box");
                 chatBox.innerHTML = "";
-                if (!data.mensajes || data.mensajes.length === 0) return;
-
+                if (!data.mensajes) return;
                 data.mensajes.forEach(m => renderizarMensaje(m.rol, m.contenido));
                 chatBox.scrollTop = chatBox.scrollHeight;
             } catch (e) { console.error(e); }
@@ -164,9 +186,24 @@
             else cargarListaChats();
         }
 
+        function toggleSplitScreen() {
+            document.getElementById("editor-panel").classList.toggle("hidden");
+        }
+
+        function enviarDesdeEditor() {
+            const txt = document.getElementById("code-editor-text").value.trim();
+            if (!txt) return;
+            archivosAdjuntos.push({
+                nombre: "editor_code.py",
+                mime_type: "text/plain",
+                contenido_b64: "data:text/plain;base64," + btoa(unescape(encodeURIComponent(txt)))
+            });
+            renderizarPreviewAdjuntos();
+            toggleSplitScreen();
+        }
+
         function manejarArchivos(e) {
-            const files = Array.from(e.target.files);
-            files.forEach(f => {
+            Array.from(e.target.files).forEach(f => {
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     archivosAdjuntos.push({
@@ -183,26 +220,14 @@
         function renderizarPreviewAdjuntos() {
             const cont = document.getElementById("preview-adjuntos");
             cont.innerHTML = "";
-            if (archivosAdjuntos.length === 0) {
-                cont.classList.add("hidden");
-                return;
-            }
+            if (archivosAdjuntos.length === 0) { cont.classList.add("hidden"); return; }
             cont.classList.remove("hidden");
             archivosAdjuntos.forEach((a, idx) => {
                 const chip = document.createElement("div");
                 chip.className = "bg-slate-800 text-xs px-3 py-1 rounded-full border border-slate-700 flex items-center gap-2 text-slate-300";
-                chip.innerHTML = `
-                    <i class="fa-solid fa-file text-purple-400"></i>
-                    <span>${a.nombre}</span>
-                    <button onclick="eliminarAdjunto(${idx})" class="hover:text-rose-400"><i class="fa-solid fa-xmark"></i></button>
-                `;
+                chip.innerHTML = `<i class="fa-solid fa-file text-purple-400"></i><span>${a.nombre}</span><button onclick="archivosAdjuntos.splice(${idx},1);renderizarPreviewAdjuntos();" class="hover:text-rose-400"><i class="fa-solid fa-xmark"></i></button>`;
                 cont.appendChild(chip);
             });
-        }
-
-        function eliminarAdjunto(idx) {
-            archivosAdjuntos.splice(idx, 1);
-            renderizarPreviewAdjuntos();
         }
 
         async function enviarMensaje() {
@@ -217,11 +242,14 @@
             archivosAdjuntos = [];
             renderizarPreviewAdjuntos();
 
+            const modoRol = document.getElementById("select-rol").value;
+            const webSearch = document.getElementById("check-web").checked;
+
             const chatBox = document.getElementById("chat-box");
             const loadingDiv = document.createElement("div");
             loadingDiv.id = "loading-spinner";
             loadingDiv.className = "flex items-center gap-2 text-purple-400 text-sm italic";
-            loadingDiv.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin"></i> Aria está procesando...`;
+            loadingDiv.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin"></i> Aria (${modoRol.toUpperCase()}) procesando...`;
             chatBox.appendChild(loadingDiv);
             chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -232,13 +260,14 @@
                     body: JSON.stringify({
                         chat_id: chatActualId,
                         prompt: prompt,
+                        modo_rol: modoRol,
+                        web_search: webSearch,
                         archivos: payloadArchivos
                     })
                 });
 
                 document.getElementById("loading-spinner")?.remove();
                 const data = await res.json();
-
                 if (res.ok && data.respuesta) {
                     renderizarMensaje("agente", data.respuesta);
                     cargarListaChats();
@@ -247,33 +276,22 @@
                 }
             } catch (e) {
                 document.getElementById("loading-spinner")?.remove();
-                renderizarMensaje("agente", "⚠️ **Error de conexión.**");
+                renderizarMensaje("agente", "⚠️ **Error de conexión con el servidor.**");
             }
         }
 
         function renderizarMensaje(rol, contenido) {
             const chatBox = document.getElementById("chat-box");
             const isUser = rol === "usuario";
-
             const wrap = document.createElement("div");
             wrap.className = `flex gap-4 ${isUser ? 'justify-end' : 'justify-start'}`;
-
             const avatar = isUser ? '' : `<div class="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center font-bold text-xs shrink-0">A</div>`;
             const bg = isUser ? 'bg-purple-600 text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-2xl' : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-2xl rounded-tl-none p-5 max-w-3xl w-full';
 
-            const parsedContent = isUser ? contenido : marked.parse(contenido);
-
-            wrap.innerHTML = `
-                ${avatar}
-                <div class="${bg}">
-                    <div class="prose prose-invert max-w-none text-sm leading-relaxed">${parsedContent}</div>
-                </div>
-            `;
-
+            wrap.innerHTML = `${avatar}<div class="${bg}"><div class="prose prose-invert max-w-none text-sm leading-relaxed">${isUser ? contenido : marked.parse(contenido)}</div></div>`;
             chatBox.appendChild(wrap);
             chatBox.scrollTop = chatBox.scrollHeight;
 
-            // Resaltar sintaxis e inyectar botón de copiar código
             wrap.querySelectorAll('pre code').forEach((block) => {
                 hljs.highlightElement(block);
                 const pre = block.parentElement;
