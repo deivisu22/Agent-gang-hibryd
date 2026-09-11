@@ -38,7 +38,8 @@
                 </button>
             </div>
 
-            <div class="mb-4">
+            <!-- SELECTOR DE ROL -->
+            <div class="mb-3">
                 <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Modo / Rol Active</label>
                 <select id="select-rol" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-purple-300 font-medium outline-none">
                     <option value="dev">💻 Full-Stack Developer</option>
@@ -47,14 +48,25 @@
                 </select>
             </div>
 
-            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Historial de Chats</div>
-            <div id="lista-chats" class="space-y-1 overflow-y-auto max-h-[calc(100vh-280px)]"></div>
+            <!-- INSTRUCCIONES PERSONALIZADAS -->
+            <div class="mb-4">
+                <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Instrucciones Custom</label>
+                <textarea id="custom-instructions" rows="2" placeholder="Ej: Responde siempre directo..." class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 outline-none resize-none"></textarea>
+            </div>
+
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Historial Global Cloud</div>
+            <div id="lista-chats" class="space-y-1 overflow-y-auto max-h-[calc(100vh-360px)]"></div>
         </div>
 
-        <div class="border-t border-slate-800 pt-4 text-xs text-slate-400 flex items-center justify-between">
-            <span class="flex items-center gap-2"><i class="fa-solid fa-server text-emerald-400"></i> Serverless Active</span>
-            <button onclick="exportarChat()" title="Exportar Registro" class="hover:text-purple-300 flex items-center gap-1 bg-slate-800 px-2 py-1 rounded border border-slate-700">
-                <i class="fa-solid fa-file-export"></i> Exportar
+        <div class="border-t border-slate-800 pt-4 text-xs text-slate-400 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+                <span class="flex items-center gap-2 text-emerald-400"><i class="fa-solid fa-cloud"></i> Supabase Sync</span>
+                <button onclick="exportarChat()" title="Exportar Markdown" class="hover:text-purple-300 bg-slate-800 px-2 py-1 rounded border border-slate-700">
+                    <i class="fa-solid fa-download"></i> MD
+                </button>
+            </div>
+            <button onclick="vincularGoogleDrive()" class="w-full bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 py-1.5 rounded-lg text-xs font-medium transition flex items-center justify-center gap-2">
+                <i class="fa-brands fa-google"></i> Respaldar en Google Drive
             </button>
         </div>
     </aside>
@@ -71,8 +83,8 @@
                 
                 <div class="flex items-center gap-4">
                     <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                        <input type="checkbox" id="check-web" class="accent-purple-500 rounded">
-                        <span><i class="fa-brands fa-google text-indigo-400"></i> Búsqueda Google+Web</span>
+                        <input type="checkbox" id="check-self-code" class="accent-purple-500 rounded">
+                        <span><i class="fa-solid fa-microchip text-purple-400"></i> Leer server.py</span>
                     </label>
                     <button onclick="toggleSplitScreen()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center gap-2">
                         <i class="fa-solid fa-columns"></i> Code Editor
@@ -162,7 +174,7 @@
             document.getElementById("chat-box").innerHTML = `
                 <div class="text-center text-slate-500 mt-20">
                     <i class="fa-solid fa-wand-magic-sparkles text-4xl mb-4 text-purple-500"></i>
-                    <p class="font-medium text-slate-300">Aria Enterprise Suite lista.</p>
+                    <p class="font-medium text-slate-300">Aria Enterprise Suite lista con Supabase Cloud.</p>
                 </div>
             `;
             document.getElementById("titulo-chat-actual").innerText = "Nueva conversación";
@@ -187,7 +199,7 @@
         }
 
         async function borrarChat(cid) {
-            if (!confirm("¿Eliminar este registro de conversación?")) return;
+            if (!confirm("¿Eliminar este registro de conversación en la nube?")) return;
             await fetch(`/api/chats/${cid}`, { method: "DELETE" });
             if (cid === chatActualId) nuevoChat();
             else cargarListaChats();
@@ -243,9 +255,7 @@
             if (!prompt && archivosAdjuntos.length === 0) return;
 
             const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
-            // Texto por defecto si solo se envió un archivo
-            const textoUsuario = prompt || `📁 *Archivo adjunto enviado para análisis* (${archivosAdjuntos.map(a => a.nombre).join(', ')})`;
+            const textoUsuario = prompt || `📁 *Archivo adjunto enviado* (${archivosAdjuntos.map(a => a.nombre).join(', ')})`;
             renderizarMensaje("usuario", textoUsuario, timeNow);
             input.value = "";
 
@@ -254,13 +264,14 @@
             renderizarPreviewAdjuntos();
 
             const modoRol = document.getElementById("select-rol").value;
-            const webSearch = document.getElementById("check-web").checked;
+            const leerSelfCode = document.getElementById("check-self-code").checked;
+            const instruccionesCustom = document.getElementById("custom-instructions").value;
 
             const chatBox = document.getElementById("chat-box");
             const loadingDiv = document.createElement("div");
             loadingDiv.id = "loading-spinner";
             loadingDiv.className = "flex items-center gap-2 text-purple-400 text-sm italic";
-            loadingDiv.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin"></i> Aria (${modoRol.toUpperCase()}) procesando...`;
+            loadingDiv.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin"></i> Aria (${modoRol.toUpperCase()}) procesando en la nube...`;
             chatBox.appendChild(loadingDiv);
             chatBox.scrollTop = chatBox.scrollHeight;
 
@@ -270,9 +281,10 @@
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         chat_id: chatActualId,
-                        prompt: prompt || "Analiza el archivo adjunto enviado.",
+                        prompt: prompt || "Analiza los archivos adjuntos.",
                         modo_rol: modoRol,
-                        web_search: webSearch,
+                        leer_codigo_propio: leerSelfCode,
+                        instrucciones_custom: instruccionesCustom,
                         archivos: payloadArchivos
                     })
                 });
@@ -331,12 +343,16 @@
         function exportarChat() {
             const titulo = document.getElementById("titulo-chat-actual").innerText;
             const content = document.getElementById("chat-box").innerText;
-            const headerMD = `# REGISTRO DE CONVERSACIÓN: ${titulo}\nExportado el: ${new Date().toLocaleString()}\n\n---\n\n`;
+            const headerMD = `# REGISTRO DE CONVERSACIÓN (SUPABASE CLOUD): ${titulo}\nExportado el: ${new Date().toLocaleString()}\n\n---\n\n`;
             const blob = new Blob([headerMD + content], { type: "text/markdown" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
             a.download = `Registro_${chatActualId}.md`;
             a.click();
+        }
+
+        async function vincularGoogleDrive() {
+            alert("🔗 Módulo Google Drive: Para sincronizar directamente en tu cuenta personal de Google, asegúrate de activar la API de Google Drive OAuth en tu consola de Google Cloud.");
         }
     </script>
 </body>
