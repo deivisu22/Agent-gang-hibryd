@@ -8,29 +8,35 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import google.generativeai as genai
+from dotenv import load_dotenv
 
-KEYS_RAW = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
-API_KEYS = [k.strip() for k in KEYS_RAW.split(",") if k.strip()]
+load_dotenv(override=True)
+
+def obtener_keys():
+    KEYS_RAW = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
+    return [k.strip() for k in KEYS_RAW.split(",") if k.strip()]
 
 KEY_INDEX = 0
 
 def configurar_gemini():
     global KEY_INDEX
-    if not API_KEYS:
+    keys = obtener_keys()
+    if not keys:
         raise HTTPException(
             status_code=503, 
             detail="Falta la variable GEMINI_API_KEYS en Vercel."
         )
-    key_actual = API_KEYS[KEY_INDEX % len(API_KEYS)]
+    key_actual = keys[KEY_INDEX % len(keys)]
     genai.configure(api_key=key_actual)
 
 def rotar_api_key():
     global KEY_INDEX
-    if API_KEYS:
-        KEY_INDEX = (KEY_INDEX + 1) % len(API_KEYS)
+    keys = obtener_keys()
+    if keys:
+        KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-MODELO_PRINCIPAL = "gemini-1.5-flash"
-MODELO_RESPALDO = "gemini-1.5-pro"
+MODELO_PRINCIPAL = "gemini-2.5-flash"
+MODELO_RESPALDO = "gemini-2.0-flash"
 ARCHIVO_MEMORIA = "/tmp/memoria.json"
 
 app = FastAPI(title="Aria Mirror AI Studio")
@@ -93,8 +99,8 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
         conversacion_previa += f"\n[{msg['rol'].upper()}]: {msg['contenido']}\n"
 
     system_instruction = (
-        "Eres Aria AI, un Agente Autónomo Multi-Funcional y Tutor Personal desplegado en Vercel.\n"
-        "Responde de forma clara, profesional y directa.\n"
+        "Eres Aria AI, mi asistente personal, desarrollador full stack y tutor personal.\n"
+        "Responde de forma técnica, dinámica, sin rodeos ni formalismos innecesarios.\n"
         f"HISTORIAL RECIENTE:\n{conversacion_previa}"
     )
 
@@ -109,7 +115,8 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
     contents.append(prompt_final)
 
     ultimo_error = ""
-    intentos = max(len(API_KEYS) * 2, 2)
+    keys = obtener_keys()
+    intentos = max(len(keys) * 2, 2)
 
     for _ in range(intentos):
         configurar_gemini()
