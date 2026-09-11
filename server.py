@@ -5,21 +5,20 @@ import time
 import subprocess
 import shutil
 import psutil
+import base64
 from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from google import genai
+from google.genai import types
 from google.genai.errors import ServerError, ClientError
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 
 load_dotenv(override=True)
 
-# -------------------------------------------------------------
-# 1. POOL Y ROTACIÓN AUTOMÁTICA DE API KEYS (ZERO LIMITS / CLAUDE FIX)
-# -------------------------------------------------------------
 KEYS_RAW = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
 API_KEYS = [k.strip() for k in KEYS_RAW.split(",") if k.strip()]
 
@@ -41,7 +40,7 @@ MODELO_PRINCIPAL = "gemini-3.6-flash"
 MODELO_RESPALDO = "gemini-3.5-flash"
 ARCHIVO_MEMORIA = "memoria.json"
 
-app = FastAPI(title="Aria Mirror AI Studio v6.0 Ultra-Omni")
+app = FastAPI(title="Aria Mirror AI Studio Unificado")
 
 app.add_middleware(
     CORSMiddleware,
@@ -51,23 +50,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------------------------------------------------
-# SCHEDULER DE MANTENIMIENTO BACKGROUND
-# -------------------------------------------------------------
-def tarea_mantenimiento_background():
-    try:
-        if os.path.exists("auto_cleaner.py"):
-            subprocess.run(["python", "auto_cleaner.py"], capture_output=True, text=True)
-    except Exception as e:
-        print(f"❌ Error Scheduler: {str(e)}")
-
-scheduler = BackgroundScheduler()
-scheduler.add_job(tarea_mantenimiento_background, 'interval', hours=6)
-scheduler.start()
-
-# -------------------------------------------------------------
-# MEMORIA PERSISTENTE Y LOGS
-# -------------------------------------------------------------
 def cargar_memoria() -> dict:
     if os.path.exists(ARCHIVO_MEMORIA):
         try:
@@ -129,58 +111,60 @@ def obtener_metricas_sistema() -> dict:
     return {
         "cpu_uso": f"{psutil.cpu_percent()}%",
         "ram_uso": f"{psutil.virtual_memory().percent}%",
-        "disco_libre_gb": f"{disco.free / (1024**3):.2f} GB",
-        "total_keys_pool": len(API_KEYS)
+        "disco_libre_gb": f"{disco.free / (1024**3):.2f} GB"
     }
 
-def generar_imagen_artística(prompt: str) -> str:
+def generar_imagen_arte(prompt: str) -> str:
     prompt_encoded = prompt.replace(" ", "%20")
     url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
     return (
-        f"🎨 **Generador Multimodal (ChatGPT DALL·E Equivalent):**\n\n"
+        f"🎨 **Resultado de Generación Visual:**\n\n"
         f"![Imagen Generada]({url_imagen})\n\n"
         f"🔗 [Descargar Imagen HD]({url_imagen})"
     )
 
-# -------------------------------------------------------------
-# CORE PROMPT: FUSIÓN SUPREMA DE IAs
-# -------------------------------------------------------------
-def consultar_gemini(prompt: str, modo: str = "general") -> str:
-    if modo == "imagen":
-        return generar_imagen_artística(prompt)
+def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
+    # 1. Detección automática de intenciones de generación visual
+    palabras_graficas = ["crea una imagen", "genera una imagen", "haz un dibujo", "dibuja", "renderiza", "diseña un logo"]
+    if any(p in prompt.lower() for p in palabras_graficas) and not imagen_b64:
+        return generar_imagen_arte(prompt)
 
+    # 2. Preparación del contexto multimodal inteligente
     memoria = cargar_memoria()
-    reglas = "\n".join([f"- {r}" for r in memoria.get("reglas_aprendidas", [])])
     arbol = "\n".join(obtener_arbol_proyecto())
-    
     conversacion_previa = ""
-    for msg in memoria.get("historial_conversacion", [])[-10:]:
+    for msg in memoria.get("historial_conversacion", [])[-8:]:
         conversacion_previa += f"\n[{msg['rol'].upper()}]: {msg['contenido']}\n"
 
-    system_prompt = (
-        "SISTEMA HÍBRIDO OMNI-AGENTE (Aria Mirror v6.0):\n"
-        "Has sido reprogramado combinando lo mejor de las 4 IAs líderes:\n"
-        "1. VERSATILIDAD (ChatGPT): Responde cualquier consulta con naturalidad, tono directo y adaptabilidad.\n"
-        "2. PRECISIÓN EN CÓDIGO (Claude): Genera código estructurado, libre de errores y metodológico.\n"
-        "3. VELOCIDAD Y ECOSYSTEM (Gemini): Integra visión técnica amplia e información estructurada.\n"
-        "4. PRODUCTIVIDAD CORPORATIVA (Copilot): Enfócate en solución de problemas de office, scripts y automatización.\n\n"
-        "REGLAS ANTI-DESVENTAJAS:\n"
-        "- Cero alucinaciones: Si un dato requiere prueba de ejecución, sugiere usar la Shell del sistema.\n"
-        "- En modo 'general': Responde SOLO con texto fluido y explicaciones, NADA de bloques de código.\n"
-        "- En modo 'dev': Entrega código probado, modular, listo para producción y paso a paso.\n\n"
-        f"MODO ACTUAL: {modo.upper()}\n\n"
+    system_instruction = (
+        "Eres Aria AI, un Agente Autónomo Multi-Funcional, Tutor Personal y Desarrollador Full-Stack Senior.\n"
+        "DIRECTRICES DE CLARIDAD:\n"
+        "1. Si la petición requiere análisis de imágenes, descríbela y extrae conclusiones claras o código según la consulta.\n"
+        "2. Si la petición es de programación, entrega código modular, probado y sin errores.\n"
+        "3. Si la petición es general, sé directo, técnico y conciso. NUNCA agregues resúmenes al final.\n\n"
         f"ESTRUCTURA DEL WORKSPACE:\n{arbol}\n\n"
-        f"REGLAS APRENDIDAS:\n{reglas}\n\n"
-        f"HISTORIAL RECIENTE:\n{conversacion_previa}\n\n"
-        f"PETICIÓN ACTUAL DEL MASTER:\n{prompt}"
+        f"HISTORIAL RECIENTE:\n{conversacion_previa}"
     )
+
+    contents = []
+    
+    # Procesar imagen adjunta si existe
+    if imagen_b64 and "," in imagen_b64:
+        header, encoded = imagen_b64.split(",", 1)
+        mime_type = header.split(";")[0].split(":")[1]
+        data_bytes = base64.b64decode(encoded)
+        
+        contents.append(types.Part.from_bytes(data=data_bytes, mime_type=mime_type))
+
+    prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {prompt if prompt else 'Analiza la imagen enviada.'}"
+    contents.append(prompt_final)
 
     intentos_totales = len(API_KEYS) * 2
     for _ in range(intentos_totales):
         client = obtener_cliente_genai()
         for modelo in [MODELO_PRINCIPAL, MODELO_RESPALDO]:
             try:
-                response = client.models.generate_content(model=modelo, contents=system_prompt)
+                response = client.models.generate_content(model=modelo, contents=contents)
                 guardar_mensaje_historial("usuario", prompt)
                 guardar_mensaje_historial("agente", response.text)
                 return response.text
@@ -191,27 +175,16 @@ def consultar_gemini(prompt: str, modo: str = "general") -> str:
                 rotar_api_key()
                 time.sleep(0.5)
 
-    raise HTTPException(status_code=503, detail="API Keys ocupadas. Intenta de nuevo.")
+    raise HTTPException(status_code=503, detail="API Keys temporalmente saturadas.")
 
-# -------------------------------------------------------------
-# REST API ENDPOINTS
-# -------------------------------------------------------------
 class PeticionChat(BaseModel):
     prompt: str
-    modo: Optional[str] = "general"
-
-class PeticionShell(BaseModel):
-    comando: str
+    imagen: Optional[str] = None
 
 @app.post("/api/chat")
 def chat_endpoint(peticion: PeticionChat):
-    respuesta = consultar_gemini(peticion.prompt, peticion.modo)
+    respuesta = consultar_multimodal(peticion.prompt, peticion.imagen)
     return {"respuesta": respuesta}
-
-@app.post("/api/shell")
-def shell_endpoint(peticion: PeticionShell):
-    exito, salida = ejecutar_comando_shell(peticion.comando)
-    return {"exito": exito, "salida": salida}
 
 @app.get("/api/files/tree")
 def tree_endpoint():

@@ -39,120 +39,107 @@
 </head>
 <body class="bg-geminiBg text-geminiText min-h-screen flex font-sans antialiased overflow-hidden">
 
-    <!-- SIDEBAR ESTILO GEMINI -->
+    <!-- SIDEBAR -->
     <aside class="w-64 bg-geminiSidebar border-r border-gray-800 flex flex-col h-screen shrink-0 text-sm">
-        
-        <!-- Header Sidebar -->
         <div class="p-4 flex items-center justify-between">
             <div class="flex items-center gap-2 font-semibold text-base text-gray-100">
                 <span class="text-xl bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent font-bold">✦ Aria</span>
             </div>
-            <button onclick="toggleSidebar()" class="text-gray-400 hover:text-white p-1 rounded-md hover:bg-geminiHover">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-            </button>
         </div>
 
-        <!-- Acciones Principales -->
         <div class="px-3 space-y-1">
             <button onclick="nuevaSesion()" class="w-full flex items-center gap-3 px-3 py-2.5 rounded-full hover:bg-geminiHover text-left text-xs font-medium text-gray-200 transition">
                 <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                 <span>Nueva conversación</span>
             </button>
-            <button class="w-full flex items-center gap-3 px-3 py-2 rounded-full hover:bg-geminiHover text-left text-xs text-geminiMuted transition">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                <span>Buscar conversaciones</span>
-            </button>
-            <button onclick="cambiarModoRapido('imagen')" class="w-full flex items-center gap-3 px-3 py-2 rounded-full hover:bg-geminiHover text-left text-xs text-geminiMuted transition">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                <span>Imágenes</span>
-            </button>
         </div>
 
-        <div class="px-4 pt-4 pb-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Cuadernos / Workspace</div>
-        
-        <!-- Árbol de archivos estilo Cuadernos -->
+        <div class="px-4 pt-4 pb-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Workspace</div>
         <div id="file-tree" class="px-3 overflow-y-auto space-y-0.5 text-xs text-geminiMuted font-mono"></div>
 
-        <div class="px-4 pt-4 pb-1 text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Recientes</div>
-        
-        <!-- Historial Reciente -->
-        <div id="recientes-list" class="flex-1 overflow-y-auto px-3 space-y-0.5 text-xs text-geminiMuted">
-            <div class="px-3 py-1.5 rounded-lg bg-geminiHover text-white truncate cursor-pointer font-medium">Diseño de IA Híbrida Autoevolutiva</div>
-        </div>
-
-        <!-- Footer Usuario / Perfil -->
-        <div class="p-3 border-t border-gray-800/80 flex items-center justify-between text-xs">
-            <div class="flex items-center gap-2">
-                <div class="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-xs">D</div>
-                <div class="truncate">
-                    <div class="font-medium text-gray-200">Deivis Urdaneta</div>
-                    <div class="text-[10px] text-gray-500">Master / Plus</div>
-                </div>
+        <div class="mt-auto p-3 border-t border-gray-800 flex items-center gap-2 text-xs">
+            <div class="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white">D</div>
+            <div class="truncate">
+                <div class="font-medium text-gray-200">Deivis Urdaneta</div>
+                <div class="text-[10px] text-emerald-400">Modo Unificado Activo</div>
             </div>
-            <span class="text-gray-500 hover:text-white cursor-pointer">⚙️</span>
         </div>
     </aside>
 
-    <!-- ÁREA PRINCIPAL DE CHAT -->
+    <!-- ÁREA PRINCIPAL -->
     <main class="flex-1 flex flex-col h-screen max-w-full overflow-hidden relative">
-        
-        <!-- Header Superior Flotante -->
         <header class="h-12 px-6 flex items-center justify-between text-xs text-gray-400">
             <div class="flex items-center gap-2">
                 <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span class="text-gray-300 font-medium">Aria Studio v6.0</span>
+                <span class="text-gray-300 font-medium">Aria Studio - Motor Multimodal Unificado</span>
             </div>
-            <div class="flex items-center gap-3">
-                <span id="sys-stats" class="text-[11px] font-mono text-gray-500">CPU: -- | RAM: --</span>
-            </div>
+            <span id="sys-stats" class="text-[11px] font-mono text-gray-500">CPU: -- | RAM: --</span>
         </header>
 
-        <!-- Contenedor de Mensajes Estilo Gemini -->
         <div id="messages" class="flex-1 overflow-y-auto px-4 md:px-12 py-6 space-y-8 max-w-4xl mx-auto w-full text-sm"></div>
 
-        <!-- Loading / Procesando -->
         <div id="loading" class="hidden max-w-4xl mx-auto w-full px-4 md:px-12 py-2">
             <div class="flex items-center gap-2 text-xs text-purple-400">
                 <span class="animate-spin">✦</span>
-                <span>Aria está pensando...</span>
+                <span>Procesando solicitud...</span>
             </div>
         </div>
 
-        <!-- Input Barra Flotante Estilo Gemini -->
+        <!-- Vista previa de imagen adjunta -->
+        <div id="image-preview-container" class="hidden max-w-4xl mx-auto w-full px-4 md:px-12 mb-2">
+            <div class="relative inline-block">
+                <img id="image-preview" class="h-20 w-auto rounded-lg border border-purple-500 object-cover" src="" alt="Vista previa">
+                <button onclick="removerImagen()" class="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">×</button>
+            </div>
+        </div>
+
+        <!-- INPUT FLOTANTE -->
         <div class="p-4 md:px-12 bg-geminiBg">
             <div class="max-w-4xl mx-auto space-y-2">
-                
                 <div class="bg-geminiInput rounded-3xl border border-gray-800 p-3 shadow-xl focus-within:border-gray-700 transition flex items-center gap-3">
-                    <button type="button" onclick="ejecutarShell('ls -la')" class="text-gray-400 hover:text-white p-1 rounded-full hover:bg-geminiHover transition" title="Explorar Archivos">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    
+                    <!-- Botón para adjuntar imagen -->
+                    <input type="file" id="image-input" accept="image/*" class="hidden" onchange="cargarVistaPreviaImagen(event)">
+                    <button type="button" onclick="document.getElementById('image-input').click()" class="text-gray-400 hover:text-white p-1 rounded-full hover:bg-geminiHover transition" title="Adjuntar Imagen de Referencia">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                     </button>
 
-                    <input id="user-input" type="text" placeholder="Pregunta a Aria..." class="flex-1 bg-transparent text-sm text-gray-100 placeholder-gray-500 focus:outline-none">
+                    <input id="user-input" type="text" placeholder="Pregunta algo, adjunta una imagen o solicita desarrollo..." class="flex-1 bg-transparent text-sm text-gray-100 placeholder-gray-500 focus:outline-none">
 
-                    <!-- Desplegable Modo/Modelo estilo Flash -->
-                    <select id="modo-agente" class="bg-geminiHover text-xs text-gray-300 px-3 py-1.5 rounded-full border border-gray-700 focus:outline-none cursor-pointer">
-                        <option value="general">Flash (Texto)</option>
-                        <option value="dev">Pro Dev (Código)</option>
-                        <option value="imagen">Canvas (Imágenes)</option>
-                    </select>
-
-                    <button type="button" onclick="enviarMensaje()" class="bg-geminiHover hover:bg-gray-700 text-white p-2 rounded-full transition">
+                    <button type="button" onclick="enviarMensaje()" class="bg-purple-600 hover:bg-purple-700 text-white p-2 rounded-full transition">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
                     </button>
-                </div>
-
-                <div class="text-[11px] text-gray-500 text-center">
-                    Aria Mirror AI Studio es un entorno autónomo. Revisa el código generado antes de ejecutarlo.
                 </div>
             </div>
         </div>
     </main>
 
     <script>
+        let imagenBase64 = null;
+
         cargarHistorial();
         cargarMetricas();
         cargarArbol();
         setInterval(cargarMetricas, 10000);
+
+        function cargarVistaPreviaImagen(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagenBase64 = e.target.result;
+                    document.getElementById('image-preview').src = imagenBase64;
+                    document.getElementById('image-preview-container').classList.remove('hidden');
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function removerImagen() {
+            imagenBase64 = null;
+            document.getElementById('image-input').value = '';
+            document.getElementById('image-preview-container').classList.add('hidden');
+        }
 
         async function cargarHistorial() {
             try {
@@ -171,7 +158,7 @@
                 const res = await fetch('/api/system/stats');
                 if (res.ok) {
                     const data = await res.json();
-                    document.getElementById('sys-stats').innerText = `CPU: ${data.metricas.cpu_uso} | RAM: ${data.metricas.ram_uso} | Disco: ${data.metricas.disco_libre_gb}`;
+                    document.getElementById('sys-stats').innerText = `CPU: ${data.metricas.cpu_uso} | RAM: ${data.metricas.ram_uso}`;
                 }
             } catch(e) { console.error(e); }
         }
@@ -195,19 +182,26 @@
 
         async function enviarMensaje() {
             const input = document.getElementById('user-input');
-            const modo = document.getElementById('modo-agente').value;
             const text = input.value.trim();
-            if (!text) return;
+            if (!text && !imagenBase64) return;
 
-            agregarBubble('usuario', text);
+            let contenidoUsuario = text;
+            if (imagenBase64) {
+                contenidoUsuario += `\n\n![Imagen Adjunta](${imagenBase64})`;
+            }
+
+            agregarBubble('usuario', contenidoUsuario);
+            
+            const payload = { prompt: text, imagen: imagenBase64 };
             input.value = '';
+            removerImagen();
             document.getElementById('loading').classList.remove('hidden');
 
             try {
                 const res = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: text, modo: modo })
+                    body: JSON.stringify(payload)
                 });
 
                 if (res.ok) {
@@ -223,14 +217,6 @@
             }
         }
 
-        function cambiarModoRapido(m) {
-            document.getElementById('modo-agente').value = m;
-        }
-
-        function ejecutarShell(cmd) {
-            document.getElementById('user-input').value = 'Ejecuta en consola: ' + cmd;
-        }
-
         function agregarBubble(rol, texto) {
             const container = document.getElementById('messages');
             const isUser = rol === 'usuario';
@@ -242,7 +228,7 @@
             if (isUser) {
                 innerHtml = `
                     <div class="bg-geminiUserBubble text-gray-100 px-5 py-3 rounded-3xl max-w-[80%] text-sm">
-                        ${texto}
+                        ${marked.parse(texto)}
                     </div>
                 `;
             } else {
