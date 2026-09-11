@@ -2,6 +2,7 @@ import os
 import json
 import time
 import base64
+import traceback
 from typing import Optional
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,7 +26,6 @@ app.add_middleware(
 KEY_INDEX = 0
 
 def obtener_keys() -> list[str]:
-    """Obtiene dinámicamente las API Keys en cada ejecución de la petición."""
     raw = os.getenv("GEMINI_API_KEYS", os.getenv("GEMINI_API_KEY", ""))
     return [k.strip() for k in raw.split(",") if k.strip()]
 
@@ -34,8 +34,8 @@ def configurar_gemini() -> str:
     keys = obtener_keys()
     if not keys:
         raise HTTPException(
-            status_code=503, 
-            detail="Falta la variable GEMINI_API_KEYS en las Environment Variables de Vercel."
+            status_code=500, 
+            detail="DIAGNOSTICO: La variable GEMINI_API_KEYS esta VACIA en Vercel."
         )
     key_actual = keys[KEY_INDEX % len(keys)]
     genai.configure(api_key=key_actual)
@@ -47,8 +47,7 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-# Modelos universales soportados por google.generativeai
-MODELOS_DISPONIBLES = ["gemini-1.5-flash", "gemini-1.5-pro"]
+MODELOS = ["gemini-1.5-flash", "gemini-1.5-pro"]
 ARCHIVO_MEMORIA = "/tmp/memoria.json"
 
 def cargar_memoria() -> dict:
@@ -79,25 +78,12 @@ def guardar_mensaje_historial(rol: str, contenido: str):
     memoria["historial_conversacion"] = memoria["historial_conversacion"][-40:]
     guardar_memoria(memoria)
 
-def generar_imagen_arte(prompt: str) -> str:
-    prompt_encoded = prompt.replace(" ", "%20")
-    url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
-    return (
-        f"🎨 **Resultado Visual:**\n\n"
-        f"![Imagen Generada]({url_imagen})\n\n"
-        f"🔗 [Descargar Imagen HD]({url_imagen})"
-    )
-
 def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
-    palabras_graficas = ["crea una imagen", "genera una imagen", "haz un dibujo", "dibuja", "renderiza", "diseña un logo"]
-    if any(p in prompt.lower() for p in palabras_graficas) and not imagen_b64:
-        return generar_imagen_arte(prompt)
-
     keys = obtener_keys()
     if not keys:
         raise HTTPException(
-            status_code=503, 
-            detail="Error 503: No se detectó ninguna GEMINI_API_KEYS en las variables de entorno de Vercel."
+            status_code=500, 
+            detail="DIAGNOSTICO: GEMINI_API_KEYS no existe en os.environ de Vercel."
         )
 
     memoria = cargar_memoria()
@@ -107,7 +93,7 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
 
     system_instruction = (
         "Eres Aria AI, mi asistente personal, desarrollador full stack y tutor personal.\n"
-        "Responde de forma técnica, dinámica, sin rodeos ni formalismos innecesarios.\n"
+        "Responde de forma técnica, dinámica, sin rodeos.\n"
         f"HISTORIAL RECIENTE:\n{conversacion_previa}"
     )
 
@@ -121,12 +107,11 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
     prompt_final = f"{system_instruction}\n\nPETICIÓN ACTUAL: {prompt if prompt else 'Analiza la imagen.'}"
     contents.append(prompt_final)
 
-    ultimo_error = ""
-    intentos_totales = max(len(keys) * 2, 2)
+    errores_acumulados = []
 
-    for _ in range(intentos_totales):
+    for k_idx in range(len(keys)):
         configurar_gemini()
-        for mod in MODELOS_DISPONIBLES:
+        for mod in MODELOS:
             try:
                 model = genai.GenerativeModel(mod)
                 response = model.generate_content(contents)
@@ -135,11 +120,12 @@ def consultar_multimodal(prompt: str, imagen_b64: Optional[str] = None) -> str:
                     guardar_mensaje_historial("agente", response.text)
                     return response.text
             except Exception as e:
-                ultimo_error = str(e)
+                err_msg = f"KeyIdx {k_idx} | Modelo {mod} -> Error: {str(e)}"
+                errores_acumulados.append(err_msg)
                 rotar_api_key()
-                time.sleep(0.2)
 
-    raise HTTPException(status_code=503, detail=f"Fallaron las llamadas a Gemini API. Detalle: {ultimo_error}")
+    detalle_final = " || ".join(errores_acumulados)
+    raise HTTPException(status_code=500, detail=f"FALLO DE CONEXION A GEMINI. Detalles: {detalle_final}")
 
 class PeticionChat(BaseModel):
     prompt: str
