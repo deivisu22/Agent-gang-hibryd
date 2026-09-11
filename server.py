@@ -166,6 +166,7 @@ def historial_endpoint(token: str = Depends(oauth2_scheme)):
 # -------------------------------------------------------------
 
 @app.get("/", response_class=HTMLResponse)
+@app.get("/", response_class=HTMLResponse)
 def interfaz_web():
     return """
     <!DOCTYPE html>
@@ -175,6 +176,11 @@ def interfaz_web():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Agente IA Multi-Entorno</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <!-- Marked.js para renderizar Markdown -->
+        <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+        <!-- Highlight.js para resaltado de código -->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/tokyo-night-dark.min.css">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     </head>
     <body class="bg-gray-900 text-white min-h-screen flex flex-col font-sans">
         
@@ -188,20 +194,20 @@ def interfaz_web():
             </div>
         </div>
 
-        <!-- PANTALLA CHAT Y SANDBOX -->
+        <!-- PANTALLA CHAT -->
         <div id="chat-screen" class="hidden flex-1 flex flex-col h-screen max-w-5xl mx-auto w-full p-2">
             <header class="p-4 bg-gray-800 rounded-t-xl flex justify-between items-center border-b border-gray-700">
                 <div class="flex items-center gap-3">
                     <h2 class="font-bold text-lg text-purple-400">💬 Agente Autónomo</h2>
-                    <span class="text-xs bg-green-900 text-green-300 px-2 py-1 rounded">Sandbox Activa (Subprocess)</span>
+                    <span class="text-xs bg-green-900 text-green-300 px-2 py-1 rounded">Markdown & Syntax Active</span>
                 </div>
                 <button onclick="logout()" class="text-xs bg-red-600 px-3 py-1 rounded font-bold">Salir</button>
             </header>
             
-            <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-950 font-mono text-sm"></div>
+            <div id="messages" class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-950 text-sm"></div>
             
             <div class="p-3 bg-gray-800 rounded-b-xl flex gap-2 border-t border-gray-700">
-                <input id="user-input" type="text" placeholder="Escribe tu consulta o pide un código para probar en Sandbox..." class="flex-1 p-3 bg-gray-700 rounded border border-gray-600 focus:outline-none focus:border-purple-500">
+                <input id="user-input" type="text" placeholder="Escribe tu consulta..." class="flex-1 p-3 bg-gray-700 rounded border border-gray-600 focus:outline-none focus:border-purple-500">
                 <button onclick="enviarMensaje()" class="bg-purple-600 px-6 rounded font-bold hover:bg-purple-700 transition">Enviar</button>
             </div>
         </div>
@@ -271,8 +277,38 @@ def interfaz_web():
                 const container = document.getElementById('messages');
                 const div = document.createElement('div');
                 div.className = rol === 'usuario' ? 'text-right' : 'text-left';
-                div.innerHTML = `<span class="inline-block p-3 rounded-lg max-w-full text-sm ${rol === 'usuario' ? 'bg-purple-600 text-white' : 'bg-gray-800 text-gray-200 border border-gray-700 whitespace-pre-wrap'}">${texto}</span>`;
+                
+                let contenidoHtml = '';
+                if (rol === 'usuario') {
+                    contenidoHtml = `<span class="inline-block p-3 rounded-lg max-w-full text-sm bg-purple-600 text-white">${texto}</span>`;
+                } else {
+                    // Renderizado de Markdown con Highlight.js
+                    const parsedMarkdown = marked.parse(texto);
+                    contenidoHtml = `<div class="inline-block p-4 rounded-lg max-w-full text-sm bg-gray-800 text-gray-200 border border-gray-700 markdown-body">${parsedMarkdown}</div>`;
+                }
+
+                div.innerHTML = contenidoHtml;
                 container.appendChild(div);
+
+                // Aplicar coloreado de sintaxis a bloques <pre><code>
+                div.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                    
+                    // Agregar boton de copia
+                    const parent = block.parentElement;
+                    if (!parent.querySelector('.copy-btn')) {
+                        const copyBtn = document.createElement('button');
+                        copyBtn.className = 'copy-btn text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-2 py-1 rounded float-right mb-2';
+                        copyBtn.innerText = 'Copiar';
+                        copyBtn.onclick = () => {
+                            navigator.clipboard.writeText(block.innerText);
+                            copyBtn.innerText = '¡Copiado!';
+                            setTimeout(() => copyBtn.innerText = 'Copiar', 2000);
+                        };
+                        parent.insertBefore(copyBtn, block);
+                    }
+                });
+
                 container.scrollTop = container.scrollHeight;
             }
 

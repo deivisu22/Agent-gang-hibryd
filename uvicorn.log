@@ -6,3 +6,18 @@ INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     156.255.150.179:0 - "GET / HTTP/1.1" 200 OK
 INFO:     156.255.150.179:0 - "GET /api/historial HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'server.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [59240]
+INFO:     Started server process [60450]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     156.255.150.179:0 - "GET / HTTP/1.1" 200 OK
+INFO:     156.255.150.179:0 - "GET /api/historial HTTP/1.1" 200 OK
+INFO:     156.255.150.179:0 - "POST /token HTTP/1.1" 200 OK
+INFO:     156.255.150.179:0 - "GET /api/historial HTTP/1.1" 200 OK
+Direct use of automatic function calling (AFC) in Models.generate_content is not recommended. Instead, we recommend to use AFC in Chat.send_message. Similarly, direct use of AFC in Models.generate_content_stream is not recommended. Instead, we recommend to use AFC in Chat.send_message_stream.
+INFO:     156.255.150.179:0 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     156.255.150.179:0 - "POST /api/chat HTTP/1.1" 200 OK
