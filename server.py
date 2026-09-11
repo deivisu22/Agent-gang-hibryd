@@ -32,10 +32,7 @@ def obtener_key_actual() -> str:
     global KEY_INDEX
     keys = obtener_keys()
     if not keys:
-        raise HTTPException(
-            status_code=500, 
-            detail="Falta la variable GEMINI_API_KEYS en Vercel."
-        )
+        raise HTTPException(status_code=500, detail="Falta la variable GEMINI_API_KEYS en Vercel.")
     return keys[KEY_INDEX % len(keys)]
 
 def rotar_api_key():
@@ -44,10 +41,41 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-# GESTIÓN DE MEMORIA Y MULTI-CHAT (PERSISTENCIA TEMPORAL / UPSTASH COMPATIBLE)
+# PERSISTENCIA HÍBRIDA (UPSTASH REDIS REST + FALLBACK LOCAL)
+UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL", "").rstrip("/")
+UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
 ARCHIVO_MEMORIA = "/tmp/aria_chats.json"
 
+def guardar_en_redis(key: str, val: dict) -> bool:
+    if not UPSTASH_URL or not UPSTASH_TOKEN:
+        return False
+    try:
+        url = f"{UPSTASH_URL}/set/{key}"
+        headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
+        res = requests.post(url, json=json.dumps(val), headers=headers, timeout=5)
+        return res.status_code == 200
+    except Exception:
+        return False
+
+def obtener_de_redis(key: str) -> Optional[dict]:
+    if not UPSTASH_URL or not UPSTASH_TOKEN:
+        return None
+    try:
+        url = f"{UPSTASH_URL}/get/{key}"
+        headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
+        res = requests.get(url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("result"):
+                return json.loads(data["result"])
+    except Exception:
+        pass
+    return None
+
 def cargar_todas_sesiones() -> dict:
+    redis_data = obtener_de_redis("aria_todas_sesiones")
+    if redis_data is not None:
+        return redis_data
     if os.path.exists(ARCHIVO_MEMORIA):
         try:
             with open(ARCHIVO_MEMORIA, "r", encoding="utf-8") as f:
@@ -57,6 +85,7 @@ def cargar_todas_sesiones() -> dict:
     return {}
 
 def guardar_todas_sesiones(data: dict):
+    guardar_en_redis("aria_todas_sesiones", data)
     try:
         with open(ARCHIVO_MEMORIA, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -76,7 +105,6 @@ def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str 
             "mensajes": []
         }
     
-    # Actualizar título automáticamente según el primer mensaje
     if len(sesiones[chat_id]["mensajes"]) == 0 and rol == "usuario":
         sesiones[chat_id]["titulo"] = (contenido[:30] + "...") if len(contenido) > 30 else contenido
 
@@ -85,7 +113,6 @@ def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str 
         "contenido": contenido,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     })
-    # Limitar ventana de contexto activa por chat a 30 mensajes
     sesiones[chat_id]["mensajes"] = sesiones[chat_id]["mensajes"][-30:]
     guardar_todas_sesiones(sesiones)
 
@@ -110,7 +137,6 @@ class PeticionChat(BaseModel):
 
 @app.post("/api/chat")
 def chat_endpoint(peticion: PeticionChat):
-    # Detección de comandos de generación visual
     palabras_graficas = ["crea una imagen", "genera una imagen", "haz un dibujo", "dibuja", "renderiza", "diseña un logo"]
     if any(p in peticion.prompt.lower() for p in palabras_graficas) and not peticion.archivos:
         resp_visual = generar_imagen_arte(peticion.prompt)
@@ -135,10 +161,9 @@ def chat_endpoint(peticion: PeticionChat):
 
     parts = []
     
-    # Procesar archivos adjuntos (Código, PDF, Imágenes)
     if peticion.archivos:
         for arch in peticion.archivos:
-            if "text" in arch.mime_type or "json" in arch.mime_type or "py" in arch.nombre:
+            if "text" in arch.mime_type or "json" in arch.mime_type or "py" in arch.nombre or "csv" in arch.nombre:
                 try:
                     decoded_text = base64.b64decode(arch.contenido_b64.split(",")[-1]).decode("utf-8", errors="ignore")
                     parts.append({"text": f"--- ARCHIVO ADJUNTO: {arch.nombre} ---\n{decoded_text}\n--- FIN ARCHIVO ---"})
@@ -183,7 +208,6 @@ def chat_endpoint(peticion: PeticionChat):
 
     raise HTTPException(status_code=500, detail=f"FALLO CORE ARIA: {' || '.join(errores_acumulados)}")
 
-# ENDPOINTS DE GESTIÓN MULTI-CHAT Y ARCHIVOS
 @app.get("/api/chats")
 def listar_chats():
     sesiones = cargar_todas_sesiones()
