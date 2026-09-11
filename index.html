@@ -1,109 +1,80 @@
 <!DOCTYPE html>
-<html lang="es" class="dark h-full">
+<html lang="es" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Aria AI Studio</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/tokyo-night-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        geminiBg: '#131314',
-                        geminiSidebar: '#1e1f20',
-                        geminiHover: '#282a2c',
-                        geminiInput: '#1e1f20',
-                        geminiUserBubble: '#282a2c',
-                        geminiText: '#e3e2e6'
-                    }
-                }
-            }
-        }
-    </script>
     <style>
-        html, body { height: 100%; overflow: hidden; }
-        ::-webkit-scrollbar { width: 3px; height: 3px; }
-        ::-webkit-scrollbar-thumb { background: #282a2c; border-radius: 4px; }
-        .markdown-body pre { background-color: #1e1f20 !important; border: 1px solid #282a2c; border-radius: 0.5rem; padding: 0.75rem; margin: 0.5rem 0; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
-        .markdown-body p { margin-bottom: 0.5rem; line-height: 1.5; word-break: break-word; }
-        .markdown-body code { word-break: break-word; }
+        body { background-color: #0d0f17; color: #e2e8f0; font-family: system-ui, -apple-system, sans-serif; }
+        .glass-panel { background: rgba(22, 27, 46, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .chat-container { height: calc(100vh - 120px); }
+        .markdown-body pre { background: #1a1d2e; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin: 0.5rem 0; }
+        .markdown-body code { font-family: monospace; background: rgba(255, 255, 255, 0.1); padding: 0.2rem 0.4rem; border-radius: 0.25rem; }
     </style>
 </head>
-<body class="bg-geminiBg text-geminiText h-full flex flex-col font-sans antialiased">
+<body class="h-screen overflow-hidden flex flex-col">
 
-    <!-- OVERLAY MÓVIL -->
-    <div id="sidebar-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/70 z-30 hidden md:hidden"></div>
+    <!-- Navbar -->
+    <header class="h-14 glass-panel border-b border-slate-800 flex items-center justify-between px-4 z-20">
+        <div class="flex items-center space-x-3">
+            <button id="btn-menu" class="text-slate-400 hover:text-white md:hidden">
+                <i class="fa-solid fa-bars text-lg"></i>
+            </button>
+            <span class="font-bold text-lg bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent">✦ Aria Studio</span>
+        </div>
+        <div class="text-xs text-slate-500 font-mono hidden sm:block">
+            CPU: Vercel Serverless | RAM: Auto-scaled
+        </div>
+    </header>
 
-    <div class="flex h-full w-full overflow-hidden">
-        <!-- SIDEBAR -->
-        <aside id="sidebar" class="fixed md:static inset-y-0 left-0 z-40 w-72 md:w-64 bg-geminiSidebar border-r border-gray-800 flex flex-col h-full shrink-0 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out">
-            <div class="p-4 flex items-center justify-between border-b border-gray-800">
-                <span class="text-lg font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">✦ Aria Studio</span>
-                <button onclick="toggleSidebar()" class="md:hidden text-gray-400 hover:text-white text-xl">✕</button>
-            </div>
-            
-            <div class="p-3">
-                <button onclick="nuevaSesion()" class="w-full flex items-center gap-2 px-3 py-2 bg-geminiHover hover:bg-gray-700 rounded-full text-xs font-medium text-gray-200 transition">
-                    <span>+</span> Nueva conversación
+    <div class="flex flex-1 overflow-hidden relative">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-64 glass-panel border-r border-slate-800 flex flex-col justify-between absolute md:relative z-30 h-full transform -translate-x-full md:translate-x-0 transition-transform duration-300">
+            <div class="p-4 space-y-4">
+                <button onclick="reiniciarChat()" class="w-full py-2 px-4 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 rounded-xl text-purple-300 text-sm font-semibold transition flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-plus text-xs"></i>
+                    <span>Nueva conversación</span>
                 </button>
+                <div class="space-y-1">
+                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider px-2">Archivos Workspace</p>
+                    <div id="file-tree" class="text-xs text-slate-400 space-y-1 pl-2">
+                        <!-- Carga dinamica de archivos -->
+                    </div>
+                </div>
             </div>
-
-            <div class="px-4 py-2 text-[11px] font-semibold text-gray-500 uppercase">Archivos Workspace</div>
-            <div id="file-tree" class="px-3 overflow-y-auto space-y-1 text-xs text-gray-400 font-mono flex-1"></div>
-
-            <div class="p-3 border-t border-gray-800 text-xs text-gray-400">
-                <div class="font-bold text-gray-200">Deivis Urdaneta</div>
-                <div class="text-[10px] text-emerald-400">Aria AI v6.0 Active</div>
+            <div class="p-4 border-t border-slate-800 text-xs text-slate-500">
+                <p class="font-semibold text-slate-300">Deivis Urdaneta</p>
+                <p class="text-emerald-400 font-mono">Aria AI v6.0 Active</p>
             </div>
         </aside>
 
-        <!-- ÁREA PRINCIPAL -->
-        <main class="flex-1 flex flex-col h-full w-full min-w-0 bg-geminiBg overflow-hidden">
-            <!-- HEADER FIJO -->
-            <header class="h-12 px-4 flex items-center justify-between border-b border-gray-800/80 bg-geminiBg shrink-0">
-                <div class="flex items-center gap-3">
-                    <button onclick="toggleSidebar()" class="md:hidden text-gray-300 bg-geminiSidebar p-1.5 rounded-lg border border-gray-800">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
-                    </button>
-                    <span class="text-xs font-semibold text-gray-200">Aria AI Studio</span>
-                </div>
-                <span id="sys-stats" class="text-[10px] font-mono text-gray-500">CPU: -- | RAM: --</span>
-            </header>
-
-            <!-- CONTENEDOR DE MENSAJES SCROLLABLE -->
-            <div id="messages" class="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 w-full max-w-4xl mx-auto"></div>
-
-            <!-- INDICADOR CARGANDO -->
-            <div id="loading" class="hidden px-4 py-1 text-xs text-purple-400 max-w-4xl mx-auto w-full">
-                <span class="animate-spin">✦</span> Procesando...
+        <!-- Main Chat Area -->
+        <main class="flex-1 flex flex-col relative w-full h-full bg-slate-950/50">
+            <div id="chat-box" class="flex-1 overflow-y-auto p-4 space-y-4 pb-28">
+                <!-- Los mensajes se insertan aqui -->
             </div>
 
-            <!-- VISTA PREVIA IMAGEN -->
-            <div id="image-preview-container" class="hidden px-4 mb-2 max-w-4xl mx-auto w-full">
-                <div class="relative inline-block">
-                    <img id="image-preview" class="h-16 w-auto rounded-lg border border-purple-500 object-cover" src="" alt="Preview">
-                    <button onclick="removerImagen()" class="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">✕</button>
+            <!-- Sticky Input Bar -->
+            <div class="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#0d0f17] via-[#0d0f17]/90 to-transparent z-10">
+                <div class="max-w-4xl mx-auto glass-panel rounded-2xl p-2 flex items-center space-x-2 shadow-2xl border border-slate-700/50">
+                    <label for="img-input" class="p-2 text-slate-400 hover:text-purple-400 cursor-pointer transition">
+                        <i class="fa-solid fa-camera text-lg"></i>
+                        <input type="file" id="img-input" accept="image/*" class="hidden" onchange="previewImagen(event)">
+                    </label>
+                    <input type="text" id="prompt-input" placeholder="Escribe tu mensaje..." class="flex-1 bg-transparent text-slate-100 placeholder-slate-500 text-sm focus:outline-none px-2" onkeypress="if(event.key === 'Enter') enviarMensaje()">
+                    <button onclick="enviarMensaje()" id="btn-send" class="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition flex items-center space-x-1">
+                        <span>Enviar</span>
+                    </button>
                 </div>
-            </div>
-
-            <!-- INPUT FIJO EN PARTE INFERIOR (STICKY BOTTOM) -->
-            <div class="p-2 sm:p-4 bg-geminiBg border-t border-gray-800 shrink-0 w-full">
-                <div class="max-w-4xl mx-auto flex items-center gap-2 bg-geminiInput border border-gray-800 rounded-2xl p-2 shadow-lg">
-                    <input type="file" id="image-input" accept="image/*" class="hidden" onchange="cargarVistaPreviaImagen(event)">
-                    <button type="button" onclick="document.getElementById('image-input').click()" class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-geminiHover shrink-0">
-                        📷
-                    </button>
-
-                    <input id="user-input" type="text" placeholder="Escribe tu mensaje..." class="flex-1 bg-transparent text-sm text-gray-100 focus:outline-none min-w-0">
-
-                    <button type="button" onclick="enviarMensaje()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition shrink-0">
-                        Enviar
-                    </button>
+                <div id="img-preview-container" class="max-w-4xl mx-auto mt-2 hidden">
+                    <div class="inline-flex items-center space-x-2 bg-slate-800 px-3 py-1 rounded-lg text-xs text-slate-300">
+                        <i class="fa-solid fa-image text-purple-400"></i>
+                        <span id="img-name">imagen.jpg</span>
+                        <button onclick="removerImagen()" class="text-slate-400 hover:text-red-400 ml-2"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
                 </div>
             </div>
         </main>
@@ -112,175 +83,106 @@
     <script>
         let imagenBase64 = null;
 
-        function toggleSidebar() {
+        // Toggle Sidebar en Movil
+        document.getElementById('btn-menu').addEventListener('click', () => {
             const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebar-overlay');
-            const isHidden = sidebar.classList.contains('-translate-x-full');
-            if (isHidden) {
-                sidebar.classList.remove('-translate-x-full');
-                overlay.classList.remove('hidden');
-            } else {
-                sidebar.classList.add('-translate-x-full');
-                overlay.classList.add('hidden');
-            }
-        }
+            sidebar.classList.toggle('-translate-x-full');
+        });
 
-        function cargarVistaPreviaImagen(event) {
-            const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    imagenBase64 = e.target.result;
-                    document.getElementById('image-preview').src = imagenBase64;
-                    document.getElementById('image-preview-container').classList.remove('hidden');
-                };
-                reader.readAsDataURL(file);
-            }
+        function previewImagen(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            document.getElementById('img-name').innerText = file.name;
+            document.getElementById('img-preview-container').classList.remove('hidden');
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                imagenBase64 = evt.target.result;
+            };
+            reader.readAsDataURL(file);
         }
 
         function removerImagen() {
             imagenBase64 = null;
-            document.getElementById('image-input').value = '';
-            document.getElementById('image-preview-container').classList.add('hidden');
+            document.getElementById('img-input').value = '';
+            document.getElementById('img-preview-container').classList.add('hidden');
         }
 
-        async function cargarHistorial() {
-            try {
-                const res = await fetch('/api/historial');
-                if (res.ok) {
-                    const data = await res.json();
-                    const container = document.getElementById('messages');
-                    container.innerHTML = '';
-                    data.historial.forEach(m => agregarBubble(m.rol, m.contenido));
-                }
-            } catch(e) { console.error(e); }
-        }
+        function agregarMensaje(rol, texto) {
+            const chatBox = document.getElementById('chat-box');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `flex ${rol === 'usuario' ? 'justify-end' : 'justify-start'} animate-fade-in`;
 
-        async function cargarMetricas() {
-            try {
-                const res = await fetch('/api/system/stats');
-                if (res.ok) {
-                    const data = await res.json();
-                    document.getElementById('sys-stats').innerText = `CPU: ${data.metricas.cpu_uso} | RAM: ${data.metricas.ram_uso}`;
-                }
-            } catch(e) { console.error(e); }
-        }
+            const bubble = document.createElement('div');
+            bubble.className = `max-w-[85%] sm:max-w-[75%] rounded-2xl p-4 text-sm ${
+                rol === 'usuario' 
+                ? 'bg-purple-600/30 border border-purple-500/30 text-purple-100 rounded-br-none' 
+                : 'glass-panel border border-slate-700/50 text-slate-200 rounded-bl-none markdown-body'
+            }`;
 
-        async function cargarArbol() {
-            try {
-                const res = await fetch('/api/files/tree');
-                if (res.ok) {
-                    const data = await res.json();
-                    const container = document.getElementById('file-tree');
-                    container.innerHTML = '';
-                    data.arbol.forEach(f => {
-                        const d = document.createElement('div');
-                        d.className = 'truncate hover:text-white cursor-pointer py-1 px-2 rounded hover:bg-geminiHover';
-                        d.innerText = '📄 ' + f;
-                        d.onclick = () => { if (window.innerWidth < 768) toggleSidebar(); };
-                        container.appendChild(d);
-                    });
-                }
-            } catch(e) { console.error(e); }
+            if (rol === 'agente') {
+                bubble.innerHTML = marked.parse(texto);
+            } else {
+                bubble.innerText = texto;
+            }
+
+            msgDiv.appendChild(bubble);
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
 
         async function enviarMensaje() {
-            const input = document.getElementById('user-input');
-            const text = input.value.trim();
-            if (!text && !imagenBase64) return;
+            const input = document.getElementById('prompt-input');
+            const prompt = input.value.trim();
+            if (!prompt && !imagenBase64) return;
 
-            let contenidoUsuario = text;
-            if (imagenBase64) {
-                contenidoUsuario += `\n\n![Imagen Adjunta](${imagenBase64})`;
-            }
+            const userText = prompt || "[Imagen enviada]";
+            agregarMensaje('usuario', userText);
 
-            agregarBubble('usuario', contenidoUsuario);
-            
-            const payload = { prompt: text, imagen: imagenBase64 };
             input.value = '';
+            const imgData = imagenBase64;
             removerImagen();
-            document.getElementById('loading').classList.remove('hidden');
+
+            const btnSend = document.getElementById('btn-send');
+            btnSend.disabled = true;
+            btnSend.classList.add('opacity-50');
 
             try {
                 const res = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify({ prompt: prompt, imagen: imgData })
                 });
 
-                if (res.ok) {
-                    const data = await res.json();
-                    agregarBubble('agente', data.respuesta);
+                const data = await res.json();
+
+                if (res.ok && data.respuesta) {
+                    agregarMensaje('agente', data.respuesta);
                 } else {
-                    agregarBubble('agente', 'Error en el servidor (' + res.status + ')');
+                    const errorDetalle = data.detail || JSON.stringify(data);
+                    agregarMensaje('agente', `⚠️ **Diagnóstico de Error Serverless:**\n\n\`\`\`text\n${errorDetalle}\n\`\`\``);
                 }
-            } catch(e) {
-                agregarBubble('agente', 'Error de conexión: ' + e.message);
+            } catch (err) {
+                agregarMensaje('agente', `⚠️ **Error de Red/Cliente:**\n\n\`\`\`text\n${err.message}\n\`\`\``);
             } finally {
-                document.getElementById('loading').classList.add('hidden');
+                btnSend.disabled = false;
+                btnSend.classList.remove('opacity-50');
             }
         }
 
-        function escapeHTML(str) {
-            return str.replace(/[&<>'"]/g, 
-                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
-            );
+        function reiniciarChat() {
+            document.getElementById('chat-box').innerHTML = '';
         }
 
-        function agregarBubble(rol, texto) {
-            const container = document.getElementById('messages');
-            const isUser = rol === 'usuario';
-            
-            const div = document.createElement('div');
-            div.className = `flex ${isUser ? 'justify-end' : 'justify-start'} w-full`;
-
-            let innerHtml = '';
-            if (isUser) {
-                innerHtml = `
-                    <div class="bg-geminiUserBubble text-gray-100 px-4 py-2 rounded-2xl max-w-[85%] text-sm">
-                        ${escapeHTML(texto)}
-                    </div>
-                `;
-            } else {
-                const parsedMarkdown = marked.parse(texto);
-                innerHtml = `
-                    <div class="flex gap-2 max-w-[100%] w-full">
-                        <div class="text-purple-400 font-bold shrink-0">✦</div>
-                        <div class="text-gray-200 text-sm markdown-body flex-1 min-w-0 overflow-hidden">
-                            ${parsedMarkdown}
-                        </div>
-                    </div>
-                `;
-            }
-
-            div.innerHTML = innerHtml;
-            container.appendChild(div);
-
-            div.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-            });
-
-            container.scrollTop = container.scrollHeight;
-        }
-
-        function nuevaSesion() {
-            document.getElementById('messages').innerHTML = '';
-            if (window.innerWidth < 768) toggleSidebar();
-        }
-
-        document.getElementById('user-input').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                enviarMensaje();
-            }
-        });
-
-        window.onload = function() {
-            cargarHistorial();
-            cargarMetricas();
-            cargarArbol();
-            setInterval(cargarMetricas, 10000);
-        };
+        // Cargar árbol de archivos al iniciar
+        fetch('/api/files/tree')
+            .then(res => res.json())
+            .then(data => {
+                const tree = document.getElementById('file-tree');
+                if (data.arbol) {
+                    tree.innerHTML = data.arbol.map(f => `<div class="flex items-center space-x-2"><i class="fa-regular fa-file text-slate-500"></i><span>${f}</span></div>`).join('');
+                }
+            }).catch(() => {});
     </script>
 </body>
 </html>
