@@ -47,7 +47,8 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-MODELOS = ["gemini-2.5-flash", "gemini-2.0-flash"]
+# Modelos con identificadores exactos soportados por la SDK google-genai
+MODELOS = ["gemini-1.5-flash", "gemini-1.5-pro"]
 ARCHIVO_MEMORIA = "/tmp/memoria.json"
 
 def cargar_memoria() -> dict:
