@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aria Studio AI - Enterprise Suite</title>
+    <title>Aria Studio AI - Multi-Engine Suite</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://js.puter.com/v2/"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
@@ -26,21 +27,44 @@
 <body class="bg-slate-950 text-slate-100 font-sans h-screen flex overflow-hidden">
 
     <!-- SIDEBAR -->
-    <aside class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col justify-between p-4 z-20">
+    <aside class="w-80 bg-slate-900 border-r border-slate-800 flex flex-col justify-between p-4 z-20">
         <div>
-            <div class="flex items-center justify-between mb-6">
+            <div class="flex items-center justify-between mb-4">
                 <div class="flex items-center gap-2">
                     <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center font-bold">A</div>
-                    <span class="font-bold text-lg tracking-wide bg-gradient-to-r from-purple-400 to-indigo-300 bg-clip-text text-transparent">Aria Studio</span>
+                    <span class="font-bold text-lg bg-gradient-to-r from-purple-400 to-indigo-300 bg-clip-text text-transparent">Aria Studio</span>
                 </div>
-                <button onclick="nuevoChat()" class="p-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-white transition text-sm" title="Nuevo Chat">
+                <button onclick="nuevoChat()" class="p-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-white text-sm" title="Nuevo Chat">
                     <i class="fa-solid fa-plus"></i>
                 </button>
             </div>
 
+            <!-- SELECTOR DE MOTOR / PROVEEDOR -->
+            <div class="mb-3">
+                <label class="text-[11px] font-semibold text-slate-400 uppercase block mb-1">Motor / Proveedor de IA</label>
+                <select id="select-proveedor" onchange="toggleOllamaConfig()" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-indigo-300 font-semibold outline-none">
+                    <option value="gemini">✨ Google Gemini Cloud</option>
+                    <option value="ollama">💻 Ollama (Local PC / Ilimitado)</option>
+                    <option value="groq">⚡ Groq Cloud (Free Fast API)</option>
+                    <option value="puter">🌐 Puter.js (Browser Direct)</option>
+                </select>
+            </div>
+
+            <!-- CONFIGURACIÓN DE OLLAMA -->
+            <div id="ollama-config" class="mb-3 hidden space-y-2 bg-slate-950 p-2 rounded-lg border border-slate-800">
+                <div>
+                    <label class="text-[10px] text-slate-400 block">URL de Ollama:</label>
+                    <input type="text" id="ollama-url" value="http://localhost:11434" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-xs text-slate-200">
+                </div>
+                <div>
+                    <label class="text-[10px] text-slate-400 block">Nombre del Modelo:</label>
+                    <input type="text" id="ollama-model" value="llama3.2" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-xs text-slate-200">
+                </div>
+            </div>
+
             <!-- SELECTOR DE ROL -->
             <div class="mb-3">
-                <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Modo / Rol Active</label>
+                <label class="text-[11px] font-semibold text-slate-400 uppercase block mb-1">Modo / Rol Active</label>
                 <select id="select-rol" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-purple-300 font-medium outline-none">
                     <option value="dev">💻 Full-Stack Developer</option>
                     <option value="accounting">📊 Contable/Fiscal (VE)</option>
@@ -48,48 +72,35 @@
                 </select>
             </div>
 
-            <!-- INSTRUCCIONES PERSONALIZADAS -->
-            <div class="mb-4">
-                <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Instrucciones Custom</label>
-                <textarea id="custom-instructions" rows="2" placeholder="Ej: Responde siempre directo..." class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 outline-none resize-none"></textarea>
+            <!-- INSTRUCCIONES CUSTOM -->
+            <div class="mb-3">
+                <label class="text-[11px] font-semibold text-slate-400 uppercase block mb-1">Instrucciones Custom</label>
+                <textarea id="custom-instructions" rows="2" placeholder="Ej: Responde directo..." class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 outline-none resize-none"></textarea>
             </div>
 
-            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Historial Global Cloud</div>
-            <div id="lista-chats" class="space-y-1 overflow-y-auto max-h-[calc(100vh-360px)]"></div>
+            <div class="text-[11px] font-semibold text-slate-400 uppercase mb-2">Historial de Chats</div>
+            <div id="lista-chats" class="space-y-1 overflow-y-auto max-h-[calc(100vh-420px)]"></div>
         </div>
 
-        <div class="border-t border-slate-800 pt-4 text-xs text-slate-400 flex flex-col gap-2">
-            <div class="flex items-center justify-between">
-                <span class="flex items-center gap-2 text-emerald-400"><i class="fa-solid fa-cloud"></i> Supabase Sync</span>
-                <button onclick="exportarChat()" title="Exportar Markdown" class="hover:text-purple-300 bg-slate-800 px-2 py-1 rounded border border-slate-700">
-                    <i class="fa-solid fa-download"></i> MD
-                </button>
-            </div>
-            <button onclick="vincularGoogleDrive()" class="w-full bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 py-1.5 rounded-lg text-xs font-medium transition flex items-center justify-center gap-2">
-                <i class="fa-brands fa-google"></i> Respaldar en Google Drive
+        <div class="border-t border-slate-800 pt-3 text-xs text-slate-400 flex items-center justify-between">
+            <span class="flex items-center gap-1.5 text-emerald-400 text-[11px]"><i class="fa-solid fa-cloud"></i> Multi-Engine Active</span>
+            <button onclick="exportarChat()" title="Exportar Markdown" class="hover:text-purple-300 bg-slate-800 px-2 py-1 rounded border border-slate-700 text-xs">
+                <i class="fa-solid fa-download"></i> Exportar
             </button>
         </div>
     </aside>
 
-    <!-- PANEL PRINCIPAL -->
+    <!-- MAIN PANEL -->
     <main class="flex-1 flex h-full relative bg-slate-950 overflow-hidden">
-        
         <div class="flex-1 flex flex-col h-full border-r border-slate-800">
             <header class="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-slate-900/50">
                 <div>
                     <h1 id="titulo-chat-actual" class="font-semibold text-slate-200">Nueva conversación</h1>
                     <span id="fecha-chat-actual" class="text-[10px] text-slate-400 block"></span>
                 </div>
-                
-                <div class="flex items-center gap-4">
-                    <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
-                        <input type="checkbox" id="check-self-code" class="accent-purple-500 rounded">
-                        <span><i class="fa-solid fa-microchip text-purple-400"></i> Leer server.py</span>
-                    </label>
-                    <button onclick="toggleSplitScreen()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center gap-2">
-                        <i class="fa-solid fa-columns"></i> Code Editor
-                    </button>
-                </div>
+                <button onclick="toggleSplitScreen()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700 flex items-center gap-2">
+                    <i class="fa-solid fa-columns"></i> Code Editor
+                </button>
             </header>
 
             <section id="chat-box" class="flex-1 overflow-y-auto p-6 space-y-6"></section>
@@ -104,7 +115,7 @@
                             <input type="file" id="input-archivo" multiple class="hidden" onchange="manejarArchivos(event)">
                         </label>
 
-                        <textarea id="prompt-input" rows="1" placeholder="Escribe tu mensaje o consulta contable/desarrollo..." 
+                        <textarea id="prompt-input" rows="1" placeholder="Escribe tu mensaje o consulta..." 
                             class="flex-1 bg-transparent text-slate-100 border-none outline-none resize-none px-2 text-sm"
                             onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); enviarMensaje(); }"></textarea>
 
@@ -117,18 +128,17 @@
             </footer>
         </div>
 
-        <!-- SPLIT SCREEN CODE EDITOR -->
+        <!-- SPLIT SCREEN EDITOR -->
         <div id="editor-panel" class="w-1/2 h-full bg-slate-900 border-l border-slate-800 flex flex-col hidden">
             <div class="h-14 border-b border-slate-800 flex items-center justify-between px-4 bg-slate-950">
                 <span class="text-xs font-semibold text-slate-300 flex items-center gap-2"><i class="fa-solid fa-code text-purple-400"></i> Editor de Código / Archivos</span>
                 <button onclick="toggleSplitScreen()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <textarea id="code-editor-text" class="flex-1 bg-slate-950 text-slate-200 font-mono text-xs p-4 border-none outline-none resize-none" placeholder="// Pega tu código Python, SQL, JSON o datos contables aquí..."></textarea>
+            <textarea id="code-editor-text" class="flex-1 bg-slate-950 text-slate-200 font-mono text-xs p-4 border-none outline-none resize-none" placeholder="// Pega tu código aquí..."></textarea>
             <div class="p-3 border-t border-slate-800 bg-slate-900 flex justify-end">
-                <button onclick="enviarDesdeEditor()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium">Inyectar Código al Chat</button>
+                <button onclick="enviarDesdeEditor()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-medium">Inyectar Código</button>
             </div>
         </div>
-
     </main>
 
     <script>
@@ -139,6 +149,13 @@
             cargarListaChats();
             cargarChatActual();
         };
+
+        function toggleOllamaConfig() {
+            const prov = document.getElementById("select-proveedor").value;
+            const cfg = document.getElementById("ollama-config");
+            if (prov === "ollama") cfg.classList.remove("hidden");
+            else cfg.classList.add("hidden");
+        }
 
         async function cargarListaChats() {
             try {
@@ -174,7 +191,7 @@
             document.getElementById("chat-box").innerHTML = `
                 <div class="text-center text-slate-500 mt-20">
                     <i class="fa-solid fa-wand-magic-sparkles text-4xl mb-4 text-purple-500"></i>
-                    <p class="font-medium text-slate-300">Aria Enterprise Suite lista con Supabase Cloud.</p>
+                    <p class="font-medium text-slate-300">Aria Multi-Engine Suite Lista.</p>
                 </div>
             `;
             document.getElementById("titulo-chat-actual").innerText = "Nueva conversación";
@@ -199,7 +216,7 @@
         }
 
         async function borrarChat(cid) {
-            if (!confirm("¿Eliminar este registro de conversación en la nube?")) return;
+            if (!confirm("¿Eliminar este registro?")) return;
             await fetch(`/api/chats/${cid}`, { method: "DELETE" });
             if (cid === chatActualId) nuevoChat();
             else cargarListaChats();
@@ -255,25 +272,39 @@
             if (!prompt && archivosAdjuntos.length === 0) return;
 
             const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const textoUsuario = prompt || `📁 *Archivo adjunto enviado* (${archivosAdjuntos.map(a => a.nombre).join(', ')})`;
-            renderizarMensaje("usuario", textoUsuario, timeNow);
+            renderizarMensaje("usuario", prompt || "Adjunto enviado", timeNow);
             input.value = "";
 
             const payloadArchivos = [...archivosAdjuntos];
             archivosAdjuntos = [];
             renderizarPreviewAdjuntos();
 
+            const proveedor = document.getElementById("select-proveedor").value;
             const modoRol = document.getElementById("select-rol").value;
-            const leerSelfCode = document.getElementById("check-self-code").checked;
             const instruccionesCustom = document.getElementById("custom-instructions").value;
+            const ollamaUrl = document.getElementById("ollama-url").value;
+            const ollamaModel = document.getElementById("ollama-model").value;
 
             const chatBox = document.getElementById("chat-box");
             const loadingDiv = document.createElement("div");
             loadingDiv.id = "loading-spinner";
             loadingDiv.className = "flex items-center gap-2 text-purple-400 text-sm italic";
-            loadingDiv.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin"></i> Aria (${modoRol.toUpperCase()}) procesando en la nube...`;
+            loadingDiv.innerHTML = `<i class="fa-solid fa-circle-notch animate-spin"></i> Aria procesando con ${proveedor.toUpperCase()}...`;
             chatBox.appendChild(loadingDiv);
             chatBox.scrollTop = chatBox.scrollHeight;
+
+            // SI ES PUTER.JS (CLIENTE DIRECTO)
+            if (proveedor === "puter") {
+                try {
+                    const respPuter = await puter.ai.chat(prompt || "Hola Aria");
+                    document.getElementById("loading-spinner")?.remove();
+                    renderizarMensaje("agente", respPuter.toString(), timeNow);
+                } catch (errPuter) {
+                    document.getElementById("loading-spinner")?.remove();
+                    renderizarMensaje("agente", "⚠️ Error Puter.js: " + errPuter.message, timeNow);
+                }
+                return;
+            }
 
             try {
                 const res = await fetch("/api/chat", {
@@ -282,8 +313,10 @@
                     body: JSON.stringify({
                         chat_id: chatActualId,
                         prompt: prompt || "Analiza los archivos adjuntos.",
+                        proveedor: proveedor,
+                        ollama_url: ollamaUrl,
+                        ollama_model: ollamaModel,
                         modo_rol: modoRol,
-                        leer_codigo_propio: leerSelfCode,
                         instrucciones_custom: instruccionesCustom,
                         archivos: payloadArchivos
                     })
@@ -343,16 +376,12 @@
         function exportarChat() {
             const titulo = document.getElementById("titulo-chat-actual").innerText;
             const content = document.getElementById("chat-box").innerText;
-            const headerMD = `# REGISTRO DE CONVERSACIÓN (SUPABASE CLOUD): ${titulo}\nExportado el: ${new Date().toLocaleString()}\n\n---\n\n`;
+            const headerMD = `# REGISTRO DE CONVERSACIÓN: ${titulo}\nExportado el: ${new Date().toLocaleString()}\n\n---\n\n`;
             const blob = new Blob([headerMD + content], { type: "text/markdown" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
             a.download = `Registro_${chatActualId}.md`;
             a.click();
-        }
-
-        async function vincularGoogleDrive() {
-            alert("🔗 Módulo Google Drive: Para sincronizar directamente en tu cuenta personal de Google, asegúrate de activar la API de Google Drive OAuth en tu consola de Google Cloud.");
         }
     </script>
 </body>

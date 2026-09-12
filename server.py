@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-app = FastAPI(title="Aria Studio - Enterprise Multi-Agent Suite")
+app = FastAPI(title="Aria Studio - Multi-Engine AI Suite")
 
 app.add_middleware(
     CORSMiddleware,
@@ -32,7 +32,7 @@ def obtener_key_actual() -> str:
     global KEY_INDEX
     keys = obtener_keys()
     if not keys:
-        raise HTTPException(status_code=500, detail="Falta GEMINI_API_KEYS en las variables de entorno.")
+        raise HTTPException(status_code=500, detail="Falta GEMINI_API_KEYS en variables de entorno.")
     return keys[KEY_INDEX % len(keys)]
 
 def rotar_api_key():
@@ -41,11 +41,9 @@ def rotar_api_key():
     if keys:
         KEY_INDEX = (KEY_INDEX + 1) % len(keys)
 
-# --- PERSISTENCIA BLINDADA (SUPABASE + UPSTASH + LOCAL) ---
+# PERSISTENCIA
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
-UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL", "").strip().rstrip("/")
-UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "").strip()
 ARCHIVO_MEMORIA = "/tmp/aria_chats.json"
 
 def guardar_en_supabase(sessions: dict) -> bool:
@@ -59,8 +57,7 @@ def guardar_en_supabase(sessions: dict) -> bool:
             "Content-Type": "application/json",
             "Prefer": "resolution=merge-duplicates"
         }
-        payload = [{"id": "global_sessions", "data": sessions}]
-        res = requests.post(url, json=payload, headers=headers, timeout=4)
+        res = requests.post(url, json=[{"id": "global_sessions", "data": sessions}], headers=headers, timeout=4)
         return res.status_code in [200, 201, 204]
     except Exception:
         return False
@@ -70,60 +67,23 @@ def obtener_de_supabase() -> Optional[dict]:
         return None
     try:
         url = f"{SUPABASE_URL}/rest/v1/aria_storage?id=eq.global_sessions"
-        headers = {
-            "apikey": SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}"
-        }
+        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
         res = requests.get(url, headers=headers, timeout=4)
         if res.status_code == 200:
             rows = res.json()
-            if rows and len(rows) > 0:
+            if rows:
                 return rows[0].get("data")
-    except Exception:
-        pass
-    return None
-
-def guardar_en_redis(key: str, val: dict) -> bool:
-    if not UPSTASH_URL or not UPSTASH_TOKEN:
-        return False
-    try:
-        url = f"{UPSTASH_URL}/set/{key}"
-        headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-        res = requests.post(url, data=json.dumps(val), headers=headers, timeout=4)
-        return res.status_code == 200
-    except Exception:
-        return False
-
-def obtener_de_redis(key: str) -> Optional[dict]:
-    if not UPSTASH_URL or not UPSTASH_TOKEN:
-        return None
-    try:
-        url = f"{UPSTASH_URL}/get/{key}"
-        headers = {"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-        res = requests.get(url, headers=headers, timeout=4)
-        if res.status_code == 200:
-            data = res.json()
-            if data.get("result"):
-                return json.loads(data["result"])
     except Exception:
         pass
     return None
 
 def cargar_todas_sesiones() -> dict:
     try:
-        sup_data = obtener_de_supabase()
-        if sup_data is not None:
-            return sup_data
+        sup = obtener_de_supabase()
+        if sup is not None:
+            return sup
     except Exception:
         pass
-
-    try:
-        redis_data = obtener_de_redis("aria_todas_sesiones")
-        if redis_data is not None:
-            return redis_data
-    except Exception:
-        pass
-
     if os.path.exists(ARCHIVO_MEMORIA):
         try:
             with open(ARCHIVO_MEMORIA, "r", encoding="utf-8") as f:
@@ -138,18 +98,13 @@ def guardar_todas_sesiones(data: dict):
     except Exception:
         pass
     try:
-        guardar_en_redis("aria_todas_sesiones", data)
-    except Exception:
-        pass
-    try:
         with open(ARCHIVO_MEMORIA, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception:
         pass
 
 def obtener_historial_chat(chat_id: str) -> list:
-    sesiones = cargar_todas_sesiones()
-    return sesiones.get(chat_id, {}).get("mensajes", [])
+    return cargar_todas_sesiones().get(chat_id, {}).get("mensajes", [])
 
 def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str = ""):
     sesiones = cargar_todas_sesiones()
@@ -164,38 +119,84 @@ def guardar_mensaje_en_chat(chat_id: str, rol: str, contenido: str, titulo: str 
     if len(sesiones[chat_id]["mensajes"]) == 0 and rol == "usuario":
         sesiones[chat_id]["titulo"] = (contenido[:35] + "...") if len(contenido) > 35 else contenido
 
-    sesiones[chat_id]["mensajes"].append({
-        "rol": rol,
-        "contenido": contenido,
-        "timestamp": timestamp_actual
-    })
+    sesiones[chat_id]["mensajes"].append({"rol": rol, "contenido": contenido, "timestamp": timestamp_actual})
     sesiones[chat_id]["mensajes"] = sesiones[chat_id]["mensajes"][-40:]
     guardar_todas_sesiones(sesiones)
 
-def leer_propio_codigo() -> str:
-    try:
-        if os.path.exists("server.py"):
-            with open("server.py", "r", encoding="utf-8") as f:
-                return f.read()[:15000]
-    except Exception:
-        pass
-    return "# Código base no accesible"
-
 ROLES_PROMPTS = {
-    "dev": (
-        "Eres Aria AI en modo FULL STACK DEVELOPER y Arquitecta de Software.\n"
-        "Especialista en Python, JavaScript, FastAPI, APIs de Google Gemini y arquitecturas serverless.\n"
-        "Analiza el problema paso a paso con razonamiento amplio antes de entregar la solución."
-    ),
-    "accounting": (
-        "Eres Aria AI en modo ANALISTA CONTABLE Y FISCAL EXPERTO EN VENEZUELA.\n"
-        "Dominio de normativas SENIAT, IGTF, IVA, ISLR y ERPs (SAP, Profit Plus, ABC-Soft, Info Auto, Odoo)."
-    ),
-    "english": (
-        "You are Aria AI in ENGLISH TUTOR Mode.\n"
-        "Help the user learn English dynamically with concise grammar explanations and natural conversation."
-    )
+    "dev": "Eres Aria AI en modo FULL STACK DEVELOPER y Arquitecta de Software. Especialista en Python, JS, FastAPI y AI.",
+    "accounting": "Eres Aria AI en modo ANALISTA CONTABLE Y FISCAL EXPERTO EN VENEZUELA (SENIAT, IGTF, IVA, ISLR, SAP, Profit Plus).",
+    "english": "You are Aria AI in ENGLISH TUTOR Mode. Help the user learn English with dynamic feedback."
 }
+
+# --- MOTORES DE INFERENCIA DE IA ---
+
+def ejecutar_ollama_local(prompt: str, system_prompt: str, ollama_url: str, modelo: str) -> str:
+    url = f"{ollama_url.rstrip('/')}/v1/chat/completions"
+    payload = {
+        "model": modelo if modelo else "llama3.2",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3
+    }
+    res = requests.post(url, json=payload, timeout=60)
+    if res.status_code == 200:
+        return res.json()["choices"][0]["message"]["content"]
+    raise Exception(f"Ollama Error {res.status_code}: {res.text}")
+
+def ejecutar_groq_cloud(prompt: str, system_prompt: str) -> str:
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    if not groq_key:
+        raise Exception("Falta la variable GROQ_API_KEY en Vercel.")
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3
+    }
+    res = requests.post(url, json=payload, headers=headers, timeout=25)
+    if res.status_code == 200:
+        return res.json()["choices"][0]["message"]["content"]
+    raise Exception(f"Groq Error {res.status_code}: {res.text}")
+
+def ejecutar_gemini_rest(prompt: str, system_prompt: str, archivos: list) -> str:
+    keys = obtener_keys()
+    current_parts = []
+    
+    if archivos:
+        for arch in archivos:
+            if "text" in arch.mime_type or any(arch.nombre.endswith(ext) for ext in [".py", ".csv", ".sql", ".js", ".html", ".css", ".txt", ".json"]):
+                try:
+                    decoded = base64.b64decode(arch.contenido_b64.split(",")[-1]).decode("utf-8", errors="ignore")
+                    current_parts.append({"text": f"--- ARCHIVO: {arch.nombre} ---\n{decoded[:20000]}\n--- FIN ARCHIVO ---"})
+                except Exception:
+                    pass
+            else:
+                current_parts.append({"inline_data": {"mime_type": arch.mime_type, "data": arch.contenido_b64.split(",")[-1]}})
+
+    current_parts.append({"text": f"{system_prompt}\n\nPETICIÓN ACTUAL: {prompt}"})
+    payload = {"contents": [{"parts": current_parts}]}
+    modelos = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"]
+    
+    for _ in range(len(keys)):
+        api_key = obtener_key_actual()
+        for mod in modelos:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={api_key}"
+            try:
+                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=25)
+                data = res.json()
+                if res.status_code == 200 and "candidates" in data:
+                    return data["candidates"][0]["content"]["parts"][0]["text"]
+            except Exception:
+                pass
+        rotar_api_key()
+    raise Exception("Fallaron todas las claves o modelos de Gemini.")
 
 class ArchivoAdjunto(BaseModel):
     nombre: str
@@ -205,94 +206,47 @@ class ArchivoAdjunto(BaseModel):
 class PeticionChat(BaseModel):
     chat_id: str
     prompt: str
+    proveedor: Optional[str] = "gemini" # gemini, ollama, groq
+    ollama_url: Optional[str] = "http://localhost:11434"
+    ollama_model: Optional[str] = "llama3.2"
     modo_rol: Optional[str] = "dev"
-    web_search: Optional[bool] = False
-    leer_codigo_propio: Optional[bool] = False
     instrucciones_custom: Optional[str] = ""
     archivos: Optional[List[ArchivoAdjunto]] = None
 
 @app.post("/api/chat")
 def chat_endpoint(peticion: PeticionChat):
-    keys = obtener_keys()
-    if not keys:
-        raise HTTPException(status_code=500, detail="GEMINI_API_KEYS no configurada.")
-
     role_instruction = ROLES_PROMPTS.get(peticion.modo_rol, ROLES_PROMPTS["dev"])
-    
     if peticion.instrucciones_custom and peticion.instrucciones_custom.strip():
-        role_instruction += f"\n\nINSTRUCCIONES ADICIONALES DEL USUARIO:\n{peticion.instrucciones_custom.strip()}"
-
-    if peticion.leer_codigo_propio:
-        codigo_server = leer_propio_codigo()
-        role_instruction += f"\n\n[CÓDIGO FUENTE DE TU PROPIO BACKEND (server.py)]:\n{codigo_server}\n[FIN CÓDIGO FUENTE]"
+        role_instruction += f"\n\nINSTRUCCIONES EXTRA:\n{peticion.instrucciones_custom.strip()}"
 
     historial = obtener_historial_chat(peticion.chat_id)
-    conversacion_previa = ""
-    for msg in historial[-6:]:
-        conversacion_previa += f"\n[{msg.get('rol', 'usuario').upper()}]: {msg.get('contenido', '')}\n"
+    conversacion_previa = "".join([f"\n[{m.get('rol').upper()}]: {m.get('contenido')}\n" for m in historial[-6:]])
+    system_prompt = f"{role_instruction}\n\nHISTORIAL PREVIO:\n{conversacion_previa}"
 
-    system_instruction_completa = f"{role_instruction}\n\nHISTORIAL DE CHAT PREVIO:\n{conversacion_previa}"
+    prompt_final = peticion.prompt if peticion.prompt.strip() else "Analiza los archivos adjuntos."
+    texto_resp = ""
 
-    current_parts = []
-    if peticion.archivos:
-        for arch in peticion.archivos:
-            es_texto = "text" in arch.mime_type or "json" in arch.mime_type or any(
-                arch.nombre.endswith(ext) for ext in [".py", ".csv", ".sql", ".js", ".html", ".css", ".txt", ".json"]
-            )
-            if es_texto:
-                try:
-                    decoded = base64.b64decode(arch.contenido_b64.split(",")[-1]).decode("utf-8", errors="ignore")
-                    if len(decoded) > 20000:
-                        decoded = decoded[:20000] + "\n... [TRUNCADO POR TAMAÑO]"
-                    current_parts.append({"text": f"--- ARCHIVO: {arch.nombre} ---\n{decoded}\n--- FIN ARCHIVO ---"})
-                except Exception:
-                    pass
-            else:
-                encoded = arch.contenido_b64.split(",")[-1]
-                current_parts.append({"inline_data": {"mime_type": arch.mime_type, "data": encoded}})
+    try:
+        if peticion.proveedor == "ollama":
+            texto_resp = ejecutar_ollama_local(prompt_final, system_prompt, peticion.ollama_url, peticion.ollama_model)
+        elif peticion.proveedor == "groq":
+            texto_resp = ejecutar_groq_cloud(prompt_final, system_prompt)
+        else:
+            texto_resp = ejecutar_gemini_rest(prompt_final, system_prompt, peticion.archivos)
 
-    prompt_texto = peticion.prompt if peticion.prompt.strip() else "Analiza el contexto y proporciona una respuesta razonada."
-    current_parts.append({"text": f"{system_instruction_completa}\n\nPETICIÓN ACTUAL: {prompt_texto}"})
-
-    payload = {
-        "contents": [{"parts": current_parts}]
-    }
-
-    modelos = ["gemini-flash-latest", "gemini-2.5-flash", "gemini-3.5-flash"]
-    errores = []
-
-    for _ in range(len(keys)):
-        api_key = obtener_key_actual()
-        for mod in modelos:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={api_key}"
-            try:
-                res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=25)
-                data = res.json()
-
-                if res.status_code == 200 and "candidates" in data:
-                    texto_resp = data["candidates"][0]["content"]["parts"][0]["text"]
-                    guardar_mensaje_en_chat(peticion.chat_id, "usuario", prompt_texto)
-                    guardar_mensaje_en_chat(peticion.chat_id, "agente", texto_resp)
-                    return {"respuesta": texto_resp}
-                else:
-                    err_msg = data.get("error", {}).get("message", res.text[:100])
-                    errores.append(f"{mod} -> {res.status_code}: {err_msg}")
-            except Exception as e:
-                errores.append(f"{mod} -> Ex: {str(e)}")
-
-        rotar_api_key()
-
-    raise HTTPException(status_code=500, detail=f"FALLO ARIA SUITE: {' || '.join(errores)}")
+        guardar_mensaje_en_chat(peticion.chat_id, "usuario", prompt_final)
+        guardar_mensaje_en_chat(peticion.chat_id, "agente", texto_resp)
+        return {"respuesta": texto_resp, "proveedor_usado": peticion.proveedor}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error Motor ({peticion.proveedor}): {str(e)}")
 
 @app.get("/api/chats")
 def listar_chats():
-    sesiones = cargar_todas_sesiones()
-    return {"chats": [{"chat_id": k, "titulo": v.get("titulo", "Conversación"), "creado": v.get("creado", "")} for k, v in sesiones.items()]}
+    return {"chats": [{"chat_id": k, "titulo": v.get("titulo", "Conversación"), "creado": v.get("creado", "")} for k, v in cargar_todas_sesiones().items()]}
 
 @app.get("/api/chats/{chat_id}")
 def obtener_chat(chat_id: str):
-    sesiones = cargar_todas_sesiones()
-    return sesiones.get(chat_id, {"titulo": "Nuevo Chat", "mensajes": []})
+    return cargar_todas_sesiones().get(chat_id, {"titulo": "Nuevo Chat", "mensajes": []})
 
 @app.delete("/api/chats/{chat_id}")
 def borrar_chat(chat_id: str):
